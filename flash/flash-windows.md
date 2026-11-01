@@ -93,6 +93,13 @@ RKDevTool v3.37 是 **32 位** 程序（PE 头 `Machine=0x014c`），加载时�
 
 顺序和地址都不能改——它们是同一块盘的连续切片，合起来等于完整镜像。
 
+> **v4 镜像（屏幕+触摸版）**：`images/v4/` 下的
+> `Armbian-..._6.18.60_minimal.img`（sha256 `12fc3daa...44614`）+
+> `images/flash_part1..4.bin`（4×512MiB，part4=276MiB）+ `images/FLASH-PARTS-v4.txt`。
+> 刷法完全相同（Loader=MiniLoaderAll.bin + 强制按地址写，4 条地址同上表）。
+> v4 变更：启用 MIPI-DSI 面板（panel-simple 补丁）+ PWM5 背光 + GSLX680 触摸
+> （默认固件 gsl3673_800x1280，8 个候选装在 `/lib/firmware/silead/`）。
+
 处理顺序：
 
 1. **确认在「下载镜像」页**，不要用 `升级固件` 页 —— 90% 的情况到这就好了
