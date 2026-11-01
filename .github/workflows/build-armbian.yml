@@ -99,6 +99,9 @@ jobs:
           BRANCH: ${{ inputs.branch || 'current' }}
         run: |
           set -o pipefail
+          # USE_LOCAL_APT_DEB_CACHE=no：关闭「宿主 apt 缓存拷贝进镜像」优化。
+          # 托管 runner 上该缓存多次产出损坏的 lists 文件，导致镜像内
+          # apt-get update 报 getline (12: Cannot allocate memory) 而构建失败。
           ./compile.sh build \
             BOARD=rk3566-evb2-lp4x-v10 \
             BRANCH="${BRANCH}" \
@@ -107,6 +110,7 @@ jobs:
             BUILD_DESKTOP=no \
             KERNEL_CONFIGURE=no \
             EXPERT=yes \
+            USE_LOCAL_APT_DEB_CACHE=no \
             SHARE_LOG=no
 
       - name: 结果信息
