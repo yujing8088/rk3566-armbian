@@ -50,6 +50,49 @@ boot 分区和 rootfs，**整盘从 0 写入即可**，不需要 `parameter.txt`
 
 刷完断电重启，串口（UART2，1500000 8N1）看启动日志。
 
+### 2.1 选完镜像就报「内存不足」
+
+**这跟 eMMC 有没有 128GB 毫无关系。** 我们的镜像是 1.77 GiB（1,900,019,712 字节），
+而 RKDevTool 是**把整个镜像读进内存**再下发的：
+
+- 32 位进程的用户态地址空间只有 2 GB，1.77 GB 的镜像 + 工具自身 + 碎片 → 必然失败
+- 判断办法：任务管理器里该进程名后面带 `*32`，或右键 `RKDevTool.exe` → 属性 → 详细信息，
+  看是否为 32 位
+
+处理顺序（从省事到麻烦）：
+
+1. **换 64 位 RKDevTool**（RK3588 配套的那批 v3.x 基本都是 64 位），这是最直接的解法
+2. **确认在「下载镜像」页**：`升级固件` 页只吃 `update.img`（带 `RKFW` 头），
+   把 1.8G 的原始磁盘镜像喂进去同样会报错
+3. 关掉浏览器等占用内存的东西，再选一次
+4. 都不行 → 走下面 2.2 / 2.3，不要在 Windows 上硬磕
+
+### 2.2 兜底 A：TF 卡启动（不碰 eMMC，最安全）
+
+Windows 上用 **balenaEtcher** 把同一个 `.img` 写到 TF 卡（写卡是流式的，不占内存），
+然后要让 BootROM 从卡启动 —— 因为 eMMC 里还有 Android 的 idbloader，会抢先引导：
+
+```bat
+:: 在 RKDevTool「下载镜像」页，地址 0x0，文件选一个 16MB 的全零文件
+:: 只抹掉 idbloader + GPT 所在的前 16MB，eMMC 其余数据不动（可随时恢复）
+fsutil file createnew zeros16m.bin 16777216
+```
+
+写入后插卡上电，U-Boot 就会从卡启动。进系统后想把 Armbian 装进 eMMC：
+
+```bash
+# 板上执行（root）
+dd if=/dev/mmcblk1 of=/dev/mmcblk0 bs=4M conv=fsync status=progress   # 卡 -> eMMC
+```
+
+### 2.3 兜底 B：Linux 一次性 U 盘 + rkdeveloptool（最稳，推荐长期用）
+
+`rkdeveloptool` 是 64 位、边读边写，多大镜像都不怕，本套件的 `flash-linux.sh` 就是包它的：
+
+1. Ubuntu Live USB 启动一台 x86 机器（不用装系统）
+2. `sudo apt install rkdeveloptool` 或编译官方源码
+3. `sudo ./flash/flash-linux.sh images/Armbian-*.img`
+
 ---
 
 ## 3. 回滚 Android
@@ -116,6 +159,7 @@ python restore-android.py --dir ..\..\android --pack --out .
 
 | 现象 | 原因 / 处理 |
 |---|---|
+| 选完镜像提示「内存不足」 | 32 位 RKDevTool 装不下 1.8G 镜像 → 换 64 位版本，见 2.1 |
 | RKDevTool 不认设备 | 换 USB 口/线（必须是数据线）、重装 DriverAssitant、确认插的是 OTG 口 |
 | 写镜像卡在 99% | eMMC 容量小于镜像尺寸；换更小的 Armbian 镜像或先 `gpt` 重建 |
 | 刷完无串口输出 | 检查串口线是否 3.3V TTL、TX/RX 是否交叉、波特率 1500000 |
