@@ -75,6 +75,11 @@ jobs:
           fi
           echo "--- after ---"; free -h; df -h /
 
+      - name: 注册 qemu binfmt（arm64 chroot 必需）
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: 获取 Armbian 构建框架
         run: git clone --depth 1 https://github.com/armbian/build.git build
 
