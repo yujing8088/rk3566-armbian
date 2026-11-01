@@ -37,16 +37,30 @@ RKDevTool 底部应显示「发现一个 MASKROM 设备」。
 
 ## 2. 刷 Armbian
 
-RKDevTool → **下载镜像** 页：
+RKDevTool → **下载镜像** 页，**先做两件准备**（实测缺一就报错）：
+
+1. **配置 Loader**：底部 `Loader:` 行点「切换」，选本工具包里的
+   `rk3566\MiniLoaderAll.bin`。设备在 MaskROM 状态时，点「执行」要先向内存下发
+   loader 才能写 flash——这行是空的会弹 **「创建IMAGE对象失败,停止执行!」**
+   （日志为 `Loading loader failed,err=-9`）
+2. **勾选「强制按地址写」**：裸 `.bin` 切片没有可解析的镜像头，勾上后工具按地址
+   原样写入，不再尝试解析
+
+然后添加分片（见 2.1.1；整镜像条目仅在使用 64 位工具且未报内存不足时使用）：
 
 | 地址 | 文件 |
 |---|---|
-| `0x00000000` | `Armbian-*-rk3566-evb2-lp4x-v10.img` |
+| `0x00000000` | `images\flash_part1.bin` |
+| `0x20000000` | `images\flash_part2.bin` |
+| `0x40000000` | `images\flash_part3.bin` |
+| `0x60000000` | `images\flash_part4.bin` |
 
-勾选该行 → 点「执行」→ 等待「下载完成」。
+全部勾选 → 点「执行」→ 先见 loader 下载进度，再逐片写入（共 1812 MiB，
+约 8~15 分钟）→ 「下载完成」。
 
 说明：Armbian 镜像内部已经有 GPT、idbloader（sector 64）、U-Boot（sector 16384）、
-boot 分区和 rootfs，**整盘从 0 写入即可**，不需要 `parameter.txt`、不需要单独下 loader。
+boot 分区和 rootfs，**整盘从 0 写入即可**，不需要 `parameter.txt`；
+Loader 只下发到内存用于通信，不占用 flash，镜像自带的 idbloader 会覆盖对应区域。
 
 刷完断电重启，串口（UART2，1500000 8N1）看启动日志。
 
