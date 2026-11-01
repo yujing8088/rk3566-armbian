@@ -90,6 +90,7 @@ jobs:
           cp -rv userpatches/config build/userpatches/
           cp -rv userpatches/dtb    build/userpatches/
           [ -d userpatches/patch ] && cp -rv userpatches/patch build/userpatches/ || true
+          [ -d userpatches/firmware ] && cp -rv userpatches/firmware build/userpatches/ || true
           ls -l build/userpatches/dtb/ build/userpatches/config/boards/
 
       - name: 编译 Armbian

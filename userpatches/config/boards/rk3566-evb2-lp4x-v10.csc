@@ -64,6 +64,22 @@ function pre_customize_image__install_evb2_dtb() {
 }
 
 # ---------------------------------------------------------------------------
+# GSLX680 触摸固件：从厂商 4.19 内核 kallsyms 定位符号后提取（8 个候选）。
+# 主线 silead.c 的固件格式与 Rockchip {offset,val} 记录流完全一致（8字节/条），
+# 直接可用。默认 gsl1680-evb2.fw = gsl3673_fw_2（厂商驱动 id 名就叫
+# "gsl3673_800x1280"，与本板 800x1280 面板一致）；若触摸无响应，
+# 在板上切换候选：cp /lib/firmware/silead/gsl3673_fw.fw /lib/firmware/silead/gsl1680-evb2.fw
+# ---------------------------------------------------------------------------
+function pre_customize_image__install_silead_firmware() {
+	local fwdir="${SRC}/userpatches/firmware/silead"
+	local target="${SDCARD}/lib/firmware/silead"
+	[[ -d "${fwdir}" ]] || exit_with_error "missing ${fwdir}"
+	run_host_command_logged mkdir -p "${target}"
+	run_host_command_logged cp -v "${fwdir}"/*.fw "${target}/"
+	display_alert "Silead firmware installed" "$(ls "${fwdir}" | tr '\n' ' ')" "info"
+}
+
+# ---------------------------------------------------------------------------
 # 主线 U-Boot（binman 生成的 u-boot-rockchip.bin，自带 DDR init + BL31）
 # 与 Armbian 官方 rk3566-box-demo 板级配置同一套做法，参考设计相近，可靠性高
 # ---------------------------------------------------------------------------
