@@ -1,0 +1,22 @@
+# Armbian 构建产物
+build/
+output/
+*.img
+*.img.gz
+*.img.xz
+*.img.zst
+
+# 本地参考内核源码树（由 tools/fetch_includes.py 生成，体积大且可重建）
+refs/
+
+# 本地 dtc 工具（Windows 二进制，构建镜像用不到）
+tools/mingw64/
+tools/bin/
+tools/*.tar
+tools/*.tar.zst
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

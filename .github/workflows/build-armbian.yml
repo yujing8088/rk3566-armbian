@@ -1,0 +1,117 @@
+name: build-armbian
+
+# 云端编译 Armbian for RK3566 EVB2 LP4X V10
+# 推送仓库 -> Actions -> build-armbian -> Run workflow -> 约 40~90 分钟后下载 artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "发行版 (bookworm / noble / trixie)"
+        type: choice
+        options: [bookworm, noble, trixie]
+        default: bookworm
+      branch:
+        description: "内核分支 (current / edge)"
+        type: choice
+        options: [current, edge]
+        default: current
+      minimal:
+        description: "最小化镜像（不含桌面）"
+        type: boolean
+        default: true
+  push:
+    paths:
+      - "dts/**"
+      - "userpatches/**"
+      - ".github/workflows/build-armbian.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-armbian-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: 检出本仓库
+        uses: actions/checkout@v4
+
+      - name: 环境自检（dtb 必须在）
+        run: |
+          set -e
+          test -f userpatches/dtb/rk3566-evb2-lp4x-v10.dtb || { echo "缺少 userpatches/dtb/*.dtb"; exit 1; }
+          BOARD_FILE=$(ls userpatches/config/boards/rk3566-evb2-lp4x-v10.* | head -1)
+          echo "board config: $BOARD_FILE"
+          ls -l userpatches/dtb/ dts/
+          df -h /
+
+      - name: 释放磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/az /usr/share/swift
+          sudo apt-get clean
+          df -h /
+
+      - name: 增加 swap（防止内核编译 OOM）
+        run: |
+          sudo fallocate -l 6G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=6144
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: 获取 Armbian 构建框架
+        run: git clone --depth 1 https://github.com/armbian/build.git build
+
+      - name: 注入板级支持
+        run: |
+          set -e
+          mkdir -p build/userpatches
+          cp -rv userpatches/config build/userpatches/
+          cp -rv userpatches/dtb    build/userpatches/
+          [ -d userpatches/patch ] && cp -rv userpatches/patch build/userpatches/ || true
+          ls -l build/userpatches/dtb/ build/userpatches/config/boards/
+
+      - name: 编译 Armbian
+        working-directory: build
+        env:
+          RELEASE: ${{ inputs.release || 'bookworm' }}
+          BRANCH: ${{ inputs.branch || 'current' }}
+        run: |
+          set -o pipefail
+          ./compile.sh build \
+            BOARD=rk3566-evb2-lp4x-v10 \
+            BRANCH="${BRANCH}" \
+            RELEASE="${RELEASE}" \
+            BUILD_MINIMAL=yes \
+            BUILD_DESKTOP=no \
+            KERNEL_CONFIGURE=no \
+            EXPERT=yes \
+            SHARE_LOG=no
+
+      - name: 结果信息
+        if: always()
+        run: |
+          echo "=== images ==="
+          ls -lh build/output/images/ 2>/dev/null || true
+          echo "=== dtb in image target ==="
+          ls -l build/output/images/*.img 2>/dev/null || true
+
+      - name: 上传镜像
+        uses: actions/upload-artifact@v4
+        with:
+          name: armbian-rk3566-evb2-lp4x-v10-${{ inputs.branch || 'current' }}-${{ inputs.release || 'bookworm' }}
+          path: |
+            build/output/images/*.img
+            build/output/images/*.img.*
+            build/output/images/*.txt
+            build/output/images/*.sha
+          if-no-files-found: error
+          retention-days: 15
+          compression-level: 0

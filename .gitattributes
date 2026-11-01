@@ -1,0 +1,14 @@
+# 在 Windows 上编辑、在 Linux 上构建，统一换行符，避免 shell 脚本出现 \r
+* text=auto eol=lf
+*.sh   text eol=lf
+*.py   text eol=lf
+*.dts  text eol=lf
+*.dtsi text eol=lf
+*.csc  text eol=lf
+*.conf text eol=lf
+*.yml  text eol=lf
+*.md   text eol=lf
+
+# 二进制
+*.dtb  binary
+*.img  binary

@@ -1,0 +1,510 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Rockchip RK3566 EVB2 LP4X V10 board (mainline port)
+ *
+ * 移植来源：厂商 Android 11 固件里的设备树
+ *   model        : "Rockchip RK3566 EVB2 LP4X V10 Board"
+ *   compatible   : "rockchip,rk3566-evb2-lp4x-v10", "rockchip,rk3566"
+ *   提取方式     : 从 boot.img (header v2, dtb_size=0x1dc57) 中取出 board.dtb
+ *
+ * 说明：
+ *   - 该板无 PMIC，CPU/LOGIC 由 PWM 稳压 (pwm-regulator)，与 rk3566-box-demo 参考设计一致
+ *   - 以太网为 RMII 100M PHY（phy addr 0，reset = GPIO4_C2，25MHz clk 由 PHY 提供）
+ *   - 显示为 MIPI-DSI 800x1280 + GSLX680 触摸，默认关闭（见文件末尾注释块）
+ *   - WiFi/BT 模组为 RK960 (AIC8800)，SDIO 4bit，与 box-demo 的 SDIO/电源时序相同
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include "rk3566.dtsi"
+
+/ {
+	model = "Rockchip RK3566 EVB2 LP4X V10 Board";
+	compatible = "rockchip,rk3566-evb2-lp4x-v10", "rockchip,rk3566";
+
+	aliases {
+		ethernet0 = &gmac1;
+		mmc0 = &sdhci;
+		mmc1 = &sdmmc0;
+		mmc2 = &sdmmc1;
+	};
+
+	chosen: chosen {
+		stdout-path = "serial2:1500000n8";
+	};
+
+	/* 50MHz 参考时钟，RMII 模式下由 PHY 侧提供（clock_in_out = "input"） */
+	gmac1_clkin: external-gmac1-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <50000000>;
+		clock-output-names = "gmac1_clkin";
+		#clock-cells = <0>;
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&power_key_pin>;
+
+		key-power {
+			label = "Power Key";
+			linux,code = <116>;		/* KEY_POWER */
+			gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_LOW>;
+			debounce-interval = <2>;
+			wakeup-source;
+		};
+
+		key-call {
+			label = "Call Key";
+			linux,code = <169>;		/* KEY_PHONE */
+			gpios = <&gpio4 RK_PD1 GPIO_ACTIVE_LOW>;
+			debounce-interval = <2>;
+			wakeup-source;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&led_work_en>;
+
+		led-work {
+			gpios = <&gpio0 RK_PC3 GPIO_ACTIVE_HIGH>;
+			function = LED_FUNCTION_HEARTBEAT;
+			color = <LED_COLOR_ID_BLUE>;
+			linux,default-trigger = "heartbeat";
+		};
+
+		led-power {
+			gpios = <&gpio0 RK_PB2 GPIO_ACTIVE_HIGH>;
+			function = LED_FUNCTION_POWER;
+			color = <LED_COLOR_ID_GREEN>;
+			default-state = "on";
+		};
+	};
+
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		clocks = <&pmucru CLK_RTC_32K>;
+		clock-names = "ext_clock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h &wifi_32k>;
+		reset-gpios = <&gpio2 RK_PB1 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <200>;
+	};
+
+	dc_12v: dc-12v {
+		compatible = "regulator-fixed";
+		regulator-name = "dc_12v";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+	};
+
+	vcc5v0_sys: vcc5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	vcc3v3_sys: vcc3v3-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	vcc_3v3: vcc-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcc_1v8: vcc-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vdd_fixed: vdd-fixed {
+		compatible = "regulator-fixed";
+		regulator-name = "vdd_fixed";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <950000>;
+		regulator-max-microvolt = <950000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vdd_cpu: vdd-cpu {
+		compatible = "pwm-regulator";
+		pwms = <&pwm0 0 5000 1>;
+		regulator-name = "vdd_cpu";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1200000>;
+		regulator-init-microvolt = <950000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
+	};
+
+	vdd_logic: vdd-logic {
+		compatible = "pwm-regulator";
+		pwms = <&pwm1 0 5000 1>;
+		regulator-name = "vdd_logic";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1100000>;
+		regulator-init-microvolt = <950000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
+	};
+
+	vcc3v3_sd: vcc3v3-sd {
+		compatible = "regulator-gpio";
+		regulator-name = "vcc3v3_sd";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpios = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>;
+		gpios-states = <1>;
+		states = <3300000 1>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcc5v0_usb_host: vcc5v0-usb-host {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_usb_host_en>;
+		regulator-name = "vcc5v0_usb_host";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-always-on;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vcc5v0_usb2_otg: vcc5v0-usb2-otg {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_usb2_otg_en>;
+		regulator-name = "vcc5v0_usb_otg";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu1 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu2 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu3 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+/* USB3/SATA/QSGMII combo PHY，两路都打开（USB3 主机 + OTG 复用） */
+&combphy1 {
+	status = "okay";
+};
+
+&combphy2 {
+	status = "okay";
+};
+
+/*
+ * 以太网：RMII，100M PHY（addr 0）
+ * 引脚组来自厂商 DTB: gmac1m0-miim / clkinout / tx-bus2 / rx-bus2 / rx-er
+ */
+&gmac1 {
+	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+	assigned-clock-parents = <&cru SCLK_GMAC1_RMII_SPEED>, <&gmac1_clkin>;
+	phy-mode = "rmii";
+	clock_in_out = "input";
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac1m0_miim
+		     &gmac1m0_clkinout
+		     &gmac1m0_tx_bus2
+		     &gmac1m0_rx_bus2
+		     &gmac1m0_rx_er>;
+	snps,reset-gpio = <&gpio4 RK_PC2 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+	phy-handle = <&rmii_phy0>;
+	status = "okay";
+};
+
+&mdio1 {
+	rmii_phy0: ethernet-phy@0 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0x0>;
+	};
+};
+
+/* I2C1: HYM8563 RTC（触摸 GSLX680 / 摄像头 sensor 为厂商私有驱动，主线不含） */
+&i2c1 {
+	status = "okay";
+
+	hym8563: rtc@51 {
+		compatible = "haoyu,hym8563";
+		reg = <0x51>;
+		#clock-cells = <0>;
+		clock-output-names = "rtcic_32kout";
+	};
+};
+
+&pinctrl {
+	eth {
+		power_key_pin: power-key-pin {
+			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	bt {
+		bt_enable_h: bt-enable-h {
+			rockchip,pins = <2 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		bt_host_wake_l: bt-host-wake-l {
+			rockchip,pins = <2 RK_PC0 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+
+		bt_wake_l: bt-wake-l {
+			rockchip,pins = <2 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	sdio-pwrseq {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>,
+					<0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_host_wake_h: wifi-host-wake-l {
+			rockchip,pins = <2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_32k: wifi-32k {
+			rockchip,pins = <2 RK_PC6 1 &pcfg_pull_none>;
+		};
+	};
+
+	usb {
+		vcc5v0_usb_host_en: vcc5v0-usb-host-en {
+			rockchip,pins = <0 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		vcc5v0_usb2_otg_en: vcc5v0-usb2-otg-en {
+			rockchip,pins = <0 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	led {
+		led_work_en: led-work-en {
+			rockchip,pins = <0 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+&pmu_io_domains {
+	pmuio2-supply = <&vcc_3v3>;
+	vccio1-supply = <&vcc_3v3>;
+	vccio3-supply = <&vcc_3v3>;
+	vccio4-supply = <&vcc_1v8>;
+	vccio5-supply = <&vcc_3v3>;
+	vccio6-supply = <&vcc_1v8>;
+	vccio7-supply = <&vcc_3v3>;
+	status = "okay";
+};
+
+&pwm0 {
+	status = "okay";
+};
+
+&pwm1 {
+	status = "okay";
+};
+
+/* eMMC (HS200, 8bit) */
+&sdhci {
+	bus-width = <8>;
+	mmc-hs200-1_8v;
+	non-removable;
+	rockchip,txclk-tapnum = <0x8>;
+	status = "okay";
+};
+
+/* TF 卡槽：厂商固件里被关闭，这里默认打开（若板上无卡槽不影响启动） */
+&sdmmc0 {
+	bus-width = <4>;
+	cap-sd-highspeed;
+	sd-uhs-sdr50;
+	cd-gpios = <&gpio0 RK_PA4 GPIO_ACTIVE_LOW>;
+	disable-wp;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0_bus4 &sdmmc0_clk &sdmmc0_cmd &sdmmc0_det>;
+	vmmc-supply = <&vcc3v3_sd>;
+	vqmmc-supply = <&vcc3v3_sd>;
+	status = "okay";
+};
+
+/* SDIO WiFi (RK960 / AIC8800, 4bit) */
+&sdmmc1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	bus-width = <4>;
+	clock-frequency = <150000000>;
+	cap-sdio-irq;
+	cap-sd-highspeed;
+	sd-uhs-sdr104;
+	keep-power-in-suspend;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	non-removable;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc1_bus4 &sdmmc1_cmd &sdmmc1_clk>;
+	vmmc-supply = <&vcc_3v3>;
+	vqmmc-supply = <&vcc_1v8>;
+	status = "okay";
+};
+
+/* 蓝牙串口（AIC8800 BT 走 UART1，硬件流控） */
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1m0_xfer &uart1m0_ctsn &uart1m0_rtsn>;
+	status = "okay";
+};
+
+&uart2 {
+	status = "okay";
+};
+
+&usb2phy0_host {
+	phy-supply = <&vcc5v0_usb_host>;
+	status = "okay";
+};
+
+&usb2phy0_otg {
+	phy-supply = <&vcc5v0_usb2_otg>;
+	status = "okay";
+};
+
+&usb2phy1_host {
+	phy-supply = <&vcc5v0_usb_host>;
+	status = "okay";
+};
+
+&usb2phy1_otg {
+	phy-supply = <&vcc5v0_usb_host>;
+	status = "okay";
+};
+
+&usb2phy1 {
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+&usb_host1_ehci {
+	status = "okay";
+};
+
+&usb_host1_ohci {
+	status = "okay";
+};
+
+&usb_host0_xhci {
+	status = "okay";
+};
+
+&usb_host1_xhci {
+	status = "okay";
+};
+
+&vop {
+	status = "okay";
+};
+
+&vop_mmu {
+	status = "okay";
+};
+
+&vpu {
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+};
+
+/*
+ * ---------------------------------------------------------------------------
+ * 显示（MIPI-DSI 800x1280 @ 70MHz，4 lane，厂商面板 simple-panel-dsi）
+ *
+ * 主线内核没有 simple-panel-dsi 驱动，需要先把面板加到 panel-simple.c 里
+ * （见 userpatches/patch 下的面板补丁），然后启用下面这段。
+ *
+ * 厂商 DTB 关键参数（供写 panel_desc 用）：
+ *   hactive 800, hfp 52, hsync 8, hbp 48
+ *   vactive 1280, vfp 16, vsync 6, vbp 15
+ *   clock 70000000, dsi lanes 4, format RGB888, flags 0xa03
+ *   reset-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>   (GPIO0_D5)
+ *   enable-gpios = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH> (GPIO0_C7)
+ *   backlight = &backlight1 (pwm4)  初始化序列: 0x11 / 0x29
+ *
+ * &dsi_dphy0 { status = "okay"; };
+ * &dsi0 {
+ *	status = "okay";
+ *	#address-cells = <1>;
+ *	#size-cells = <0>;
+ *	panel@0 {
+ *		compatible = "rockchip,rk3566-evb2-lp4x-v10-panel";
+ *		reg = <0>;
+ *		backlight = <&backlight>;
+ *		reset-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>;
+ *		enable-gpios = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
+ *		port {
+ *			mipi_in_panel: endpoint {
+ *				remote-endpoint = <&dsi0_out_panel>;
+ *			};
+ *		};
+ *	};
+ * };
+ * ---------------------------------------------------------------------------
+ */
