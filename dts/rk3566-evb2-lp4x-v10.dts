@@ -19,6 +19,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 #include "rk3566.dtsi"
 
 / {
@@ -42,6 +43,42 @@
 		clock-frequency = <50000000>;
 		clock-output-names = "gmac1_clkin";
 		#clock-cells = <0>;
+	};
+
+	/*
+	 * 面板背光：厂商 backlight1，PWM5 @ 25kHz (GPIO0_B4, pwm5m0)
+	 * 亮度 0-255 线性表，默认 200（与厂商 default-brightness-level 0xc8 一致）
+	 */
+	backlight: backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pwm5 0 25000 0>;
+		brightness-levels = <0  1  2  3  4  5  6  7  8  9
+				     10 11 12 13 14 15 16 17 18 19
+				     20 21 22 23 24 25 26 27 28 29
+				     30 31 32 33 34 35 36 37 38 39
+				     40 41 42 43 44 45 46 47 48 49
+				     50 51 52 53 54 55 56 57 58 59
+				     60 61 62 63 64 65 66 67 68 69
+				     70 71 72 73 74 75 76 77 78 79
+				     80 81 82 83 84 85 86 87 88 89
+				     90 91 92 93 94 95 96 97 98 99
+				     100 101 102 103 104 105 106 107 108 109
+				     110 111 112 113 114 115 116 117 118 119
+				     120 121 122 123 124 125 126 127 128 129
+				     130 131 132 133 134 135 136 137 138 139
+				     140 141 142 143 144 145 146 147 148 149
+				     150 151 152 153 154 155 156 157 158 159
+				     160 161 162 163 164 165 166 167 168 169
+				     170 171 172 173 174 175 176 177 178 179
+				     180 181 182 183 184 185 186 187 188 189
+				     190 191 192 193 194 195 196 197 198 199
+				     200 201 202 203 204 205 206 207 208 209
+				     210 211 212 213 214 215 216 217 218 219
+				     220 221 222 223 224 225 226 227 228 229
+				     230 231 232 233 234 235 236 237 238 239
+				     240 241 242 243 244 245 246 247 248 249
+				     250 251 252 253 254 255>;
+		default-brightness-level = <200>;
 	};
 
 	gpio-keys {
@@ -289,7 +326,7 @@
 	};
 };
 
-/* I2C1: HYM8563 RTC（触摸 GSLX680 / 摄像头 sensor 为厂商私有驱动，主线不含） */
+/* I2C1: HYM8563 RTC + Silead GSLX680 触摸（厂商固件驱动，主线用 silead.c + 固件文件） */
 &i2c1 {
 	status = "okay";
 
@@ -298,6 +335,24 @@
 		reg = <0x51>;
 		#clock-cells = <0>;
 		clock-output-names = "rtcic_32kout";
+	};
+
+	/*
+	 * 触摸：Silead GSLX680（10 点），I2C 地址 0x40
+	 *   - 中断 GPIO0_B5，低电平触发（厂商 touch-gpio flags 0x8）
+	 *   - 复位 GPIO0_B6，高有效（厂商 reset-gpio）
+	 *   - 触摸坐标范围 1280x800（横屏）；固件文件 /lib/firmware/silead/gsl1680-evb2.fw
+	 *     需从厂商内核提取后放入，否则 silead 探测失败（不影响其他功能）
+	 */
+	touchscreen@40 {
+		compatible = "silead,gsl1680";
+		reg = <0x40>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PB5 IRQ_TYPE_LEVEL_LOW>;
+		power-gpios = <&gpio0 RK_PB6 GPIO_ACTIVE_HIGH>;
+		touchscreen-size-x = <1280>;
+		touchscreen-size-y = <800>;
+		firmware-name = "gsl1680-evb2.fw";
 	};
 };
 
@@ -476,9 +531,70 @@
 
 &vop {
 	status = "okay";
+	/* 学 rock-3a：把 dclk 父时钟固定到 HPLL，避免选到不可分频的时钟源 */
+	assigned-clocks = <&cru DCLK_VOP0>, <&cru DCLK_VOP1>;
+	assigned-clock-parents = <&pmucru PLL_HPLL>, <&pmucru PLL_HPLL>;
 };
 
 &vop_mmu {
+	status = "okay";
+};
+
+/*
+ * 显示链路：VOP vp0 -> DSI0 -> 面板（MIPI-DSI 800x1280, 4 lane, 70MHz）
+ * 面板由 panel-simple.c DSI 变体驱动（内核补丁新增 compatible
+ * "rockchip,evb2-lp4x-panel"，prepare 时发 11h/29h + 硬复位）。
+ */
+&dsi_dphy0 {
+	status = "okay";
+};
+
+&dsi0 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	panel@0 {
+		compatible = "rockchip,evb2-lp4x-panel";
+		reg = <0>;
+		backlight = <&backlight>;
+		enable-gpios = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>;
+
+		port {
+			panel_in_dsi0: endpoint {
+				remote-endpoint = <&dsi0_out_panel>;
+			};
+		};
+	};
+
+	ports {
+		port@0 {
+			dsi0_in_vp0: endpoint {
+				remote-endpoint = <&vp0_out_dsi0>;
+			};
+		};
+
+		port@1 {
+			dsi0_out_panel: endpoint {
+				remote-endpoint = <&panel_in_dsi0>;
+			};
+		};
+	};
+};
+
+&vp0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	vp0_out_dsi0: endpoint@0 {
+		reg = <0>;
+		remote-endpoint = <&dsi0_in_vp0>;
+	};
+};
+
+/* 面板背光 PWM5（GPIO0_B4），pinctrl 由 dtsi 默认提供 */
+&pwm5 {
 	status = "okay";
 };
 
@@ -492,36 +608,26 @@
 
 /*
  * ---------------------------------------------------------------------------
- * 显示（MIPI-DSI 800x1280 @ 70MHz，4 lane，厂商面板 simple-panel-dsi）
+ * 显示与触摸实现说明（2026-11 v3 固件）
  *
- * 主线内核没有 simple-panel-dsi 驱动，需要先把面板加到 panel-simple.c 里
- * （见 userpatches/patch 下的面板补丁），然后启用下面这段。
+ * 显示（MIPI-DSI 800x1280 @ 70MHz，4 lane）：
+ *   - 主线 panel-simple.c 的 DSI 变体不支持硬复位也不发 11h/29h 初始化命令，
+ *     内核补丁 userpatches/patch/kernel/archive/rockchip64-6.18/
+ *     9999-drm-panel-simple-add-evb2-lp4x-generic-dsi-panel.patch 补上了：
+ *       1) panel_simple 增加 reset_gpio（"reset-gpios"）与 dsi 句柄
+ *       2) resume 时硬复位 + DCS EXIT_SLEEP_MODE(11h) 延时 120ms + DISPLAY_ON(29h)
+ *       3) 注册 compatible "rockchip,evb2-lp4x-panel"（时序取自厂商 DTB）
  *
- * 厂商 DTB 关键参数（供写 panel_desc 用）：
- *   hactive 800, hfp 52, hsync 8, hbp 48
- *   vactive 1280, vfp 16, vsync 6, vbp 15
+ * 触摸（Silead GSLX680，10 点，I2C1 @0x40）：
+ *   - 主线 drivers/input/touchscreen/silead.c（CONFIG_TOUCHSCREEN_SILEAD=m）
+ *   - 需要固件文件 /lib/firmware/silead/gsl1680-evb2.fw（从厂商内核提取，
+ *     或先用 gsl-firmware 仓库相近固件试验），首次构建可暂缺，仅触摸不可用
+ *   - 硬复位走 "power-gpios"（GPIO0_B6 高有效），驱动 probe 前 OFF->ON 复位
+ *
+ * 厂商 DTB 面板参数备份：
+ *   hactive 800, hfp 52, hsync 8, hbp 48; vactive 1280, vfp 16, vsync 6, vbp 15
  *   clock 70000000, dsi lanes 4, format RGB888, flags 0xa03
- *   reset-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>   (GPIO0_D5)
- *   enable-gpios = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH> (GPIO0_C7)
- *   backlight = &backlight1 (pwm4)  初始化序列: 0x11 / 0x29
- *
- * &dsi_dphy0 { status = "okay"; };
- * &dsi0 {
- *	status = "okay";
- *	#address-cells = <1>;
- *	#size-cells = <0>;
- *	panel@0 {
- *		compatible = "rockchip,rk3566-evb2-lp4x-v10-panel";
- *		reg = <0>;
- *		backlight = <&backlight>;
- *		reset-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>;
- *		enable-gpios = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
- *		port {
- *			mipi_in_panel: endpoint {
- *				remote-endpoint = <&dsi0_out_panel>;
- *			};
- *		};
- *	};
- * };
+ *   reset-gpios GPIO0_D5 低有效, enable-gpios GPIO0_C7 高有效
+ *   背光 = backlight1 = PWM5 @ 25kHz, 255 级, 默认 200
  * ---------------------------------------------------------------------------
  */
