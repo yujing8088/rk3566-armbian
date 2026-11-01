@@ -60,11 +60,20 @@ jobs:
 
       - name: 增加 swap（防止内核编译 OOM）
         run: |
-          sudo fallocate -l 6G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=6144
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
+          echo "--- before ---"; free -h; sudo swapon --show || true
+          # 托管 runner 自带的 /swapfile 正在使用中（fallocate 会报 Text file busy），
+          # 所以另开一个文件，只在现有 swap 不足 4GB 时添加
+          CUR_MB=$(free -m | awk '/^Swap:/{print $2}')
+          if [ "${CUR_MB:-0}" -lt 4096 ]; then
+            sudo rm -f /swapfile2
+            sudo fallocate -l 6G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=6144
+            sudo chmod 600 /swapfile2
+            sudo mkswap /swapfile2
+            sudo swapon /swapfile2
+          else
+            echo "已有 ${CUR_MB}MB swap，跳过"
+          fi
+          echo "--- after ---"; free -h; df -h /
 
       - name: 获取 Armbian 构建框架
         run: git clone --depth 1 https://github.com/armbian/build.git build

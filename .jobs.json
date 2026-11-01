@@ -1,0 +1,129 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 124885715709,
+      "run_id": 41319236590,
+      "workflow_name": "build-armbian",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/yujing8088/rk3566-armbian/actions/runs/41319236590",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOVfIpic8AAAAdE8TK_Q",
+      "head_sha": "d929d24494019c9eff196e02235a809993ff3c25",
+      "url": "https://api.github.com/repos/yujing8088/rk3566-armbian/actions/jobs/124885715709",
+      "html_url": "https://github.com/yujing8088/rk3566-armbian/actions/runs/41319236590/job/124885715709",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-11-01T15:03:21Z",
+      "started_at": "2026-11-01T15:03:23Z",
+      "completed_at": "2026-11-01T15:04:45Z",
+      "name": "build",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T15:03:24Z",
+          "completed_at": "2026-11-01T15:03:25Z"
+        },
+        {
+          "name": "检出本仓库",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T15:03:25Z",
+          "completed_at": "2026-11-01T15:03:26Z"
+        },
+        {
+          "name": "环境自检（dtb 必须在）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T15:03:26Z",
+          "completed_at": "2026-11-01T15:03:26Z"
+        },
+        {
+          "name": "释放磁盘空间",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T15:03:26Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "增加 swap（防止内核编译 OOM）",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 5,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "获取 Armbian 构建框架",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "注入板级支持",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "编译 Armbian",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "结果信息",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "上传镜像",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "Post 检出本仓库",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-01T15:04:43Z",
+          "completed_at": "2026-11-01T15:04:43Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/yujing8088/rk3566-armbian/check-runs/124885715709",
+      "labels": [
+        "ubuntu-22.04"
+      ],
+      "runner_id": 1000000000,
+      "runner_name": "GitHub Actions 1000000000",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "total_count": 1,
+  "workflows": [
+    {
+      "id": 403638625,
+      "node_id": "W_kwDOVfIpic4YDwlh",
+      "name": "build-armbian",
+      "path": ".github/workflows/build-armbian.yml",
+      "state": "active",
+      "created_at": "2026-11-01T23:02:53.000+08:00",
+      "updated_at": "2026-11-01T23:02:53.000+08:00",
+      "url": "https://api.github.com/repos/yujing8088/rk3566-armbian/actions/workflows/403638625",
+      "html_url": "https://github.com/yujing8088/rk3566-armbian/blob/main/.github/workflows/build-armbian.yml",
+      "badge_url": "https://github.com/yujing8088/rk3566-armbian/workflows/build-armbian/badge.svg"
+    }
+  ]
+}
