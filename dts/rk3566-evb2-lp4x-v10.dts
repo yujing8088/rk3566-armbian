@@ -555,11 +555,55 @@
 	#size-cells = <0>;
 
 	panel@0 {
-		compatible = "rockchip,evb2-lp4x-panel";
+		compatible = "panel-dsi-simple";
 		reg = <0>;
 		backlight = <&backlight>;
 		enable-gpios = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>;
+
+		/* DSI 参数（值为内核 mipi_display.h / drm_mipi_dsi.h 常量）：
+		 * flags = VIDEO|BURST|NO_EOT|LPM = 0xa03, format = RGB888 = 0 */
+		dsi,flags = <0xa03>;
+		dsi,format = <0>;
+		dsi,lanes = <4>;
+
+		/* 上电时序（ms）：enable → 复位脉冲 → init 延时 → 发送 init 序列 */
+		prepare-delay-ms = <10>;
+		reset-delay-ms = <20>;
+		init-delay-ms = <10>;
+		enable-delay-ms = <20>;
+		disable-delay-ms = <20>;
+		unprepare-delay-ms = <60>;
+
+		/* init 命令字节流，每条 {dtype, wait_ms, len, payload...}：
+		 * 0x11 sleep-out（后等 120ms），0x29 display-on（后等 20ms） */
+		panel-init-sequence = [
+			05 78 01 11
+			05 14 01 29
+		];
+
+		width-mm = <108>;
+		height-mm = <172>;
+
+		display-timings {
+			native-mode = <&evb2_panel_timing>;
+
+			evb2_panel_timing: timing0 {
+				clock-frequency = <70000000>;
+				hactive = <800>;
+				vactive = <1280>;
+				hfront-porch = <52>;
+				hback-porch = <48>;
+				hsync-len = <8>;
+				vfront-porch = <16>;
+				vback-porch = <15>;
+				vsync-len = <6>;
+				hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <1>;
+				pixelclk-active = <0>;
+			};
+		};
 
 		port {
 			panel_in_dsi0: endpoint {

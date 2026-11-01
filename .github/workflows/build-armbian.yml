@@ -89,8 +89,17 @@ jobs:
           mkdir -p build/userpatches
           cp -rv userpatches/config build/userpatches/
           cp -rv userpatches/dtb    build/userpatches/
-          [ -d userpatches/patch ] && cp -rv userpatches/patch build/userpatches/ || true
+          # 新版 Armbian（python 补丁系统）的用户补丁目录不带 patch/ 层：
+          # build/userpatches/kernel/archive/<series>/（日志 "User patches directory
+          # for kernel [/armbian/userpatches/kernel/archive/rockchip64-6.18]"）。
+          # 旧版补丁层路径也一并保留，兼容两种布局。
+          if [ -d userpatches/patch ]; then
+            cp -rv userpatches/patch build/userpatches/
+            mkdir -p build/userpatches/kernel
+            cp -rv userpatches/patch/kernel/. build/userpatches/kernel/
+          fi
           [ -d userpatches/firmware ] && cp -rv userpatches/firmware build/userpatches/ || true
+          ls -lR build/userpatches/kernel 2>/dev/null || true
           ls -l build/userpatches/dtb/ build/userpatches/config/boards/
 
       - name: 编译 Armbian
@@ -104,9 +113,9 @@ jobs:
           # 托管 runner 上该缓存多次产出损坏的 lists 文件，导致镜像内
           # apt-get update 报 getline (12: Cannot allocate memory) 而构建失败。
           #
-          # ARTIFACT_IGNORE_CACHE=yes：忽略 ghcr.io 上的 ORAS 内核/uboot 缓存。
-          # 重要教训：我们的内核补丁在 userpatches 里，但 artifact 版本哈希不含
-          # userpatches 内容，导致缓存命中、补丁从未编译进内核（v3/v4 均中招）。
+          # 注意：面板驱动用的是 Armbian 内置 panel-dsi-simple（panel-simple-dsi.ko），
+          # 不需要内核补丁。若以后要改内核源码，须加 ARTIFACT_IGNORE_CACHE=yes
+          # 并确认 userpatches/kernel/ 下补丁被应用（缓存哈希不含 userpatches 内容！）
           ./compile.sh build \
             BOARD=rk3566-evb2-lp4x-v10 \
             BRANCH="${BRANCH}" \
@@ -116,25 +125,22 @@ jobs:
             KERNEL_CONFIGURE=no \
             EXPERT=yes \
             USE_LOCAL_APT_DEB_CACHE=no \
-            ARTIFACT_IGNORE_CACHE=yes \
             SHARE_LOG=no
 
-      - name: 验证内核补丁已编译进去（panel + panel_simple_dsi compatible）
+      - name: 验证镜像内容（面板 DTB + panel-simple-dsi.ko + 触摸固件）
         working-directory: build
         run: |
           set -e
-          DEB=$(find output/packages-hashed -name "linux-image-current-rockchip64*.deb" | head -1)
-          echo "kernel deb: $DEB"
-          rm -rf /tmp/kver && mkdir -p /tmp/kver
-          dpkg-deb -x "$DEB" /tmp/kver
-          KO=$(find /tmp/kver -name "panel-simple.ko" | head -1)
-          echo "panel-simple.ko: $KO"
-          if [ -z "$KO" ]; then echo "!! panel-simple.ko 不存在"; exit 1; fi
-          if ! grep -q "rockchip,evb2-lp4x-panel" "$KO"; then
-            echo "!! panel-simple.ko 缺少 rockchip,evb2-lp4x-panel —— 内核补丁未生效"
-            exit 1
-          fi
-          echo "✅ panel-simple 内核补丁已生效"
+          IMG=$(ls output/images/*.img | head -1)
+          echo "image: $IMG ($(stat -c %s "$IMG") bytes)"
+          for pat in "panel-dsi-simple" "panel-simple-dsi.ko" "gsl1680-evb2.fw"; do
+            if grep -qaF "$pat" "$IMG"; then
+              echo "✅ $pat 已在镜像中"
+            else
+              echo "!! 镜像缺少 $pat"
+              exit 1
+            fi
+          done
 
       - name: 结果信息
         if: always()
