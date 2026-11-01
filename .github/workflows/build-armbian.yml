@@ -103,6 +103,10 @@ jobs:
           # USE_LOCAL_APT_DEB_CACHE=no：关闭「宿主 apt 缓存拷贝进镜像」优化。
           # 托管 runner 上该缓存多次产出损坏的 lists 文件，导致镜像内
           # apt-get update 报 getline (12: Cannot allocate memory) 而构建失败。
+          #
+          # ARTIFACT_IGNORE_CACHE=yes：忽略 ghcr.io 上的 ORAS 内核/uboot 缓存。
+          # 重要教训：我们的内核补丁在 userpatches 里，但 artifact 版本哈希不含
+          # userpatches 内容，导致缓存命中、补丁从未编译进内核（v3/v4 均中招）。
           ./compile.sh build \
             BOARD=rk3566-evb2-lp4x-v10 \
             BRANCH="${BRANCH}" \
@@ -112,7 +116,25 @@ jobs:
             KERNEL_CONFIGURE=no \
             EXPERT=yes \
             USE_LOCAL_APT_DEB_CACHE=no \
+            ARTIFACT_IGNORE_CACHE=yes \
             SHARE_LOG=no
+
+      - name: 验证内核补丁已编译进去（panel + panel_simple_dsi compatible）
+        working-directory: build
+        run: |
+          set -e
+          DEB=$(find output/packages-hashed -name "linux-image-current-rockchip64*.deb" | head -1)
+          echo "kernel deb: $DEB"
+          rm -rf /tmp/kver && mkdir -p /tmp/kver
+          dpkg-deb -x "$DEB" /tmp/kver
+          KO=$(find /tmp/kver -name "panel-simple.ko" | head -1)
+          echo "panel-simple.ko: $KO"
+          if [ -z "$KO" ]; then echo "!! panel-simple.ko 不存在"; exit 1; fi
+          if ! grep -q "rockchip,evb2-lp4x-panel" "$KO"; then
+            echo "!! panel-simple.ko 缺少 rockchip,evb2-lp4x-panel —— 内核补丁未生效"
+            exit 1
+          fi
+          echo "✅ panel-simple 内核补丁已生效"
 
       - name: 结果信息
         if: always()
