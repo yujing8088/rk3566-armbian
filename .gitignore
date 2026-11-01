@@ -1,6 +1,7 @@
 # Armbian 构建产物
 build/
 output/
+images/
 *.img
 *.img.gz
 *.img.xz

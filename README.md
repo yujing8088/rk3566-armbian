@@ -2,6 +2,11 @@
 
 > 输入：`android/` 目录下从该板子 eMMC 备份出来的 Android 11 分区镜像（16 个文件）
 > 输出：可构建出 Armbian 镜像的完整板级支持包（板卡配置 + 自研 DTB + 刷机/救砖脚本）
+>
+> **云端构建已完成**（2026-11-01）：
+> <https://github.com/yujing8088/rk3566-armbian> ·
+> 镜像 `images/Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_bookworm_current_6.18.60_minimal.img`
+> （1.81 GiB，`sha256 5408d23a7fcabb2a317d6d4aa9ce857aac5d9f3d1a4007c411f0b7903696cdf5`）
 
 ---
 
@@ -240,3 +245,14 @@ Run 页面底部 **Artifacts** → `armbian-rk3566-evb2-lp4x-v10-current-bookwor
 - 单任务硬上限 6 小时，workflow 已设 350 分钟超时
 - workflow 里加了 6GB swap：runner 只有 7–16GB 内存，内核编译不加 swap 容易 OOM
 - 推送 `dts/`、`userpatches/` 或 workflow 自身会自动触发一次构建
+
+### 8.4 首次云端构建踩到的两个坑（已修复，留档）
+
+| 现象 | 原因 | 修法 |
+|---|---|---|
+| `fallocate failed: Text file busy` | 托管 runner 自带 `/swapfile` 且已启用 | 改用 `/swapfile2`，且仅在现有 swap < 4GB 时创建 |
+| `arch-test arm64 → not supported`，随后 `Error 1` | Armbian 在 Debian trixie 容器里 `update-binfmts` 注册不上 qemu | 加 `docker/setup-qemu-action@v3`（内核级 `F` 标志注册，容器内可见） |
+| `sed: unterminated 's' command` + `Permission denied` | `run_host_command_logged` 把参数拼成字符串再 `bash -c`，`\|`、`*` 被二次解析 | 板级钩子里改用 `python3` 原地改写 `armbianEnv.txt` |
+
+实测：**首次成功构建耗时约 10 分钟**（ubuntu-22.04 runner，4 vCPU/16GB），产物 1.81 GiB。
+
