@@ -59,17 +59,32 @@ boot 分区和 rootfs，**整盘从 0 写入即可**，不需要 `parameter.txt`
 | `LoadFwProc-->create image object failed,ret=-5` | 把文件当**固件包**解析失败：我们的镜像是**原始磁盘镜像**，没有 `RKFW`/`RKAF` 头 |
 | `Loading loader failed,err=-5` | 没拿到 loader：设备没进 MaskROM、芯片没识别，或该页要求镜像自带 loader |
 
-**根因不是 eMMC 容量，也不是电脑内存**（实测 32GB 内存、22GB 空闲）。是我方镜像的**格式**
-和 `升级固件` 页不匹配 —— 那一页只接受 Rockchip 打包的 `update.img`。
+**已实测确认的结论**（v3.37 + MASKROM + 下载镜像页 + 32GB 内存）：
+在「下载镜像」页选 1.9GB 整镜像**仍然弹「内存不足」**——根因是
+RKDevTool v3.37 是 **32 位** 程序（PE 头 `Machine=0x014c`），加载时要把
+整个文件映射进 2GB 用户地址空间，1.9GB 必然失败（`ERROR_NOT_ENOUGH_MEMORY`）。
+官方工具包基本都是 32 位，**换版本解决不了，用分片写入**：
+
+### 2.1.1 分片刷写（Windows 推荐，已备好）
+
+`images/` 下已生成 4 个 512MiB 分片（`flash_part1..4.bin`）和清单 `FLASH-PARTS.txt`。
+在「下载镜像」页按顺序加 4 行，全部勾选后点「执行」：
+
+| 地址 | 文件 | 大小 |
+|---|---|---|
+| `0x00000000` | `images\flash_part1.bin` | 512 MiB |
+| `0x20000000` | `images\flash_part2.bin` | 512 MiB |
+| `0x40000000` | `images\flash_part3.bin` | 512 MiB |
+| `0x60000000` | `images\flash_part4.bin` | 276 MiB |
+
+顺序和地址都不能改——它们是同一块盘的连续切片，合起来等于完整镜像。
 
 处理顺序：
 
-1. **确认在「下载镜像」页**，地址填 `0x00000000`，不要用 `升级固件` 页 —— 90% 的情况到这就好了
+1. **确认在「下载镜像」页**，不要用 `升级固件` 页 —— 90% 的情况到这就好了
 2. 设备必须显示「发现一个 MASKROM/Loader 设备」再点执行，否则就是 `Loading loader failed`
-3. 若「下载镜像」页选完文件**仍然**报「内存不足」：那才是 32 位寻址问题。
-   RKDevTool v3.37 实测是 **32 位**（PE 头 `Machine=0x014c`），1.9GB 镜像要求整块映射，
-   32 位进程 2GB 地址空间（还要留给 UI/堆）会返回 `ERROR_NOT_ENOUGH_MEMORY`。
-   官方包基本都是 32 位，换版本不一定能解决 → 直接走 2.2 / 2.3
+3. 「下载镜像」页报「内存不足」→ 用上面的 **2.1.1 分片刷写**
+4. 或者走 2.2 / 2.3（TF 卡 / Linux rkdeveloptool），完全不依赖这个工具
 
 > 补充：2026-10-11 那次成功刷过 2.09GB 的固件包，日志里是逐分区流式下载
 > （`Start to download system,offset=...,size=...` + `It's a sparse image`），
