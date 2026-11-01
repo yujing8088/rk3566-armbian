@@ -246,18 +246,35 @@
 /*
  * 以太网：RMII，100M PHY（addr 0）
  * 引脚组来自厂商 DTB: gmac1m0-miim / clkinout / tx-bus2 / rx-bus2 / rx-er
+ *                      + eth1m0-pins（GPIO3_B0 = CLK_MAC1_OUT，25MHz 给 PHY）
+ * 板上 PHY 无独立晶振，参考时钟由 SoC CLK_MAC1_OUT 输出 25MHz 提供；
+ * 主线 dwmac-rk 驱动在 RMII 模式下会取用名为 "clk_mac_ref" 的可选时钟，
+ * 因此把 CLK_MAC1_OUT 以该名字挂进 gmac1 的 clocks 列表来启用它。
  */
 &gmac1 {
-	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>,
+			  <&cru CLK_MAC1_OUT>;
 	assigned-clock-parents = <&cru SCLK_GMAC1_RMII_SPEED>, <&gmac1_clkin>;
+	assigned-clock-rates = <0>, <0>, <25000000>;
 	phy-mode = "rmii";
 	clock_in_out = "input";
+	clocks = <&cru SCLK_GMAC1>, <&cru SCLK_GMAC1_RX_TX>,
+		 <&cru SCLK_GMAC1_RX_TX>, <&cru CLK_MAC1_REFOUT>,
+		 <&cru ACLK_GMAC1>, <&cru PCLK_GMAC1>,
+		 <&cru SCLK_GMAC1_RX_TX>, <&cru CLK_GMAC1_PTP_REF>,
+		 <&cru CLK_MAC1_OUT>;
+	clock-names = "stmmaceth", "mac_clk_rx",
+		      "mac_clk_tx", "clk_mac_refout",
+		      "aclk_mac", "pclk_mac",
+		      "clk_mac_speed", "ptp_ref",
+		      "clk_mac_ref";
 	pinctrl-names = "default";
 	pinctrl-0 = <&gmac1m0_miim
 		     &gmac1m0_clkinout
 		     &gmac1m0_tx_bus2
 		     &gmac1m0_rx_bus2
-		     &gmac1m0_rx_er>;
+		     &gmac1m0_rx_er
+		     &eth1m0_pins>;
 	snps,reset-gpio = <&gpio4 RK_PC2 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 20000 100000>;
