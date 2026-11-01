@@ -208,10 +208,35 @@ armbian-resize-filesystem
 
 ## 8. GitHub Actions 云端构建
 
-`.github/workflows/build-armbian.yml` 已就绪，推仓库后：
+### 8.1 一条命令推上去
 
-1. 仓库 → Actions → `build-armbian` → Run workflow
-2. 参数可填 `release`（bookworm/noble）与 `branch`（current/edge）
-3. 结束时在 Run 页面下载 artifact `armbian-rk3566-evb2-lp4x-v10`
+```bash
+export GITHUB_TOKEN=ghp_xxxxxxxx      # 见下方权限说明
+./tools/push-to-github.sh <你的用户名> rk3566-armbian private
+```
 
-注意：Actions 免费额度单次任务上限 6 小时，本板编译约 40–70 分钟，够用。
+脚本会：校验 token → 仓库不存在就创建 → 推送 `main` → 直接触发一次 `workflow_dispatch`。
+
+Token 权限：Classic token 勾 `repo` + `workflow`；Fine-grained token 给目标仓库
+`Contents: Read/Write`、`Administration: Read/Write`、`Actions: Read/Write`
+（要新建仓库还需账号级 `Administration: Read/Write`）。用完随时吊销。
+
+### 8.2 手动推（不想把 token 交给脚本）
+
+```bash
+git remote add origin https://github.com/<用户名>/<仓库名>.git
+git push -u origin main
+```
+
+然后网页：仓库 → **Actions** → `build-armbian` → **Run workflow**，
+可选 `release`（bookworm / noble / trixie）、`branch`（current / edge）、`minimal`。
+
+### 8.3 跑完拿镜像
+
+Run 页面底部 **Artifacts** → `armbian-rk3566-evb2-lp4x-v10-current-bookworm.zip`，
+解压得到 `Armbian_*.img`（或 `.img.xz`），直接刷机，见第 4 节。
+
+- 免费额度：公开仓库不限量；私有仓库 2000 分钟/月（Linux 计 1 倍），本板一次约 50–80 分钟
+- 单任务硬上限 6 小时，workflow 已设 350 分钟超时
+- workflow 里加了 6GB swap：runner 只有 7–16GB 内存，内核编译不加 swap 容易 OOM
+- 推送 `dts/`、`userpatches/` 或 workflow 自身会自动触发一次构建
