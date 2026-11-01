@@ -39,11 +39,26 @@ function pre_customize_image__install_evb2_dtb() {
 	[[ ${found} -eq 1 ]] || exit_with_error "no /boot/dtb*/rockchip directory found in image"
 
 	# 确保 armbianEnv.txt 指向我们的 dtb
-	run_host_command_logged \
-		sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3566-evb2-lp4x-v10.dtb|' \
-		"${SDCARD}/boot/armbianEnv.txt"
-	grep -q '^fdtfile=' "${SDCARD}/boot/armbianEnv.txt" || \
-		echo "fdtfile=rockchip/rk3566-evb2-lp4x-v10.dtb" >> "${SDCARD}/boot/armbianEnv.txt"
+	# 注意：run_host_command_logged 会把参数拼成字符串交给 bash -c 执行，
+	# sed 表达式里的 | 和 * 会被二次解析（实测报 "unterminated s command"），
+	# 所以这里直接用 python3 原地改写，绕开一切 shell 引号问题。
+	local envfile="${SDCARD}/boot/armbianEnv.txt"
+	if [[ -f "${envfile}" ]]; then
+		python3 - "${envfile}" "${BOOT_FDT_FILE}" <<-'PYEOF'
+			import re, sys
+			path, val = sys.argv[1], sys.argv[2]
+			text = open(path, encoding="utf-8").read()
+			line = "fdtfile=%s" % val
+			if re.search(r"(?m)^fdtfile=", text):
+			    text = re.sub(r"(?m)^fdtfile=.*$", line, text)
+			else:
+			    text = text.rstrip("\n") + "\n" + line + "\n"
+			open(path, "w", encoding="utf-8").write(text)
+		PYEOF
+		display_alert "fdtfile set" "$(grep '^fdtfile=' "${envfile}" || true)" "info"
+	else
+		display_alert "armbianEnv.txt missing" "${envfile} - U-Boot 会用默认 dtb" "wrn"
+	fi
 
 	display_alert "Custom DTB installed" "rk3566-evb2-lp4x-v10.dtb -> /boot/dtb*/rockchip/" "info"
 }
