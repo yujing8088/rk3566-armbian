@@ -46,11 +46,11 @@ compatible = "rockchip,rk3566-evb2-lp4x-v10", "rockchip,rk3566"
 | eMMC | `sdhci@fe310000`，8bit，HS200，`txclk-tapnum=8` | ✅ |
 | TF 卡 | `sdmmc0`（厂商固件里被 `disabled`，本套件默认打开），CD=GPIO0_A4 | ✅ |
 | 以太网 | `gmac1` **RMII 100M**，PHY addr 0，reset=GPIO4_C2，25/50M 由 PHY 供给 | ✅ |
-| WiFi | **RK960 = AIC8800**，SDIO 4bit，`WL_REG_ON`=GPIO2_B1，32K=GPIO2_C6 | ⚠️ 需 out-of-tree 驱动 |
-| 蓝牙 | AIC8800 BT，UART1 + 硬件流控，reset=GPIO2_B7，wake=GPIO2_C1/PC0 | ⚠️ 同上 |
-| USB | USB2 host×2 + USB3 host0(`fcc00000`) + host1(`fd000000`)；VBUS=GPIO0_A6 / GPIO0_C6 | ✅ |
-| 显示 | MIPI-DSI0 800×1280@70MHz 4lane，背光 PWM4，enable=GPIO0_C7，reset=GPIO0_D5 | ⚠️ 需加面板描述 |
-| 触摸 | GSLX680（I2C1 0x40） | ❌ 无主线驱动 |
+| WiFi | **RK960 = AIC8800**，SDIO 4bit，`WL_REG_ON`=GPIO2_B1，32K=GPIO2_C6 | ✅ 驱动随镜像编译（`drivers/aic8800`） |
+| 蓝牙 | AIC8800 BT，UART1 + 硬件流控，reset=GPIO2_D7，wake=GPIO2_D1 / host_wake=GPIO2_D0 | ⚠️ UART1 已使能，BT 侧待验证 |
+| USB | USB2 host×2 + USB3 host0(`fcc00000`) + host1(`fd000000`)；VBUS=GPIO0_A6 / GPIO0_C6 | ✅ `usb2phy0` 必须显式 okay，否则两个 dwc3 全部 defer |
+| 显示 | MIPI-DSI0 800×1280@70MHz 4lane，背光 PWM5，enable=GPIO0_C7，reset=GPIO0_D5 | ✅ 已点亮出字 |
+| 触摸 | GSLX680（I2C1 0x40，中断 GPIO0_B5，复位 GPIO0_B6 高有效） | ✅ 已跑通 |
 | RTC | HYM8563（I2C1 0x51） | ✅ |
 | 按键 / LED | 电源键 GPIO0_A3、通话键 GPIO4_D1；工作灯 GPIO0_C3、电源灯 GPIO0_B2 | ✅ |
 | 调试串口 | **UART2 m0（GPIO0_D0/D1），1500000 8N1，3.3V TTL** | ✅ |
@@ -202,9 +202,10 @@ armbian-resize-filesystem
 
 | 项 | 状态 | 做法 |
 |---|---|---|
-| MIPI-DSI 面板 | 默认关闭 | 在 `panel-simple.c` 加一条 800×1280 面板描述（参数已写在 `dts/` 文件末尾注释里），再打开 `&dsi0` |
-| WiFi/BT（AIC8800） | 未启用 | 编译 [aic8800 out-of-tree 驱动](https://github.com/radxa-pkg/aic8800)，装 firmware 到 `/lib/firmware/aic8800*`；SDIO 侧 DTS 已就绪 |
-| 触摸 GSLX680 | 无驱动 | 上游无主线驱动，需移植厂商 `gslx680` 驱动（可选，服务器用途可忽略） |
+| MIPI-DSI 面板 | ✅ 已完成 | `panel-simple-dsi` + DTS 描述（`dsi,flags=0x603`，含 MIPI_DSI_MODE_LPM 与 VIDEO_BURST），dclk 由 `PLL_VPLL` 700MHz/10 得到 70MHz |
+| WiFi（AIC8800 SDIO） | ✅ 已集成 | `drivers/aic8800`（AIC 官方 SDIO 驱动，已适配 6.18：cfg80211 ops 签名、timer/wakeup API、`MODULE_IMPORT_NS`），由 CI 用**内核同款交叉工具链**编译后注入镜像 `/lib/modules/<ver>/extra/`；固件走 `aic_fw_path` 模块参数 |
+| 蓝牙（AIC8800 UART） | 部分 | `&uart1` 已 okay（ttyS1，硬件流控）；AIC8800 BT 需厂商 HCI 固件下载流程，主线 `hci_uart` 不支持，待移植 |
+| 触摸 GSLX680 | ✅ 已完成 | 主线 `silead.c` + 内核补丁 `userpatches/kernel/archive/rockchip64-6.18/1000-input-silead-support-gslx680-download-protocol.patch`；固件用 `gslx680_fw.fw`（5247 条） |
 | 摄像头（HI846 等） | 未启用 | 需要 ISP/媒体管线配置，非本次目标 |
 | 以太网 100M 上限 | 硬件限制 | 板上是 RMII PHY，物理上就是百兆；要千兆得换 RGMII PHY 的板子 |
 | HDMI | 板上无 | 厂商 DTB 里 `hdmi` 也是 disabled |

@@ -519,6 +519,18 @@
 	status = "okay";
 };
 
+/*
+ * usb2phy0 必须显式使能：rk3566.dtsi 里它默认 status = "disabled"，
+ * 而 usb@fcc00000 (usbdrd30/OTG) 与 usb@fd000000 (usbhost30) 都从它取
+ * USB2 PHY / extcon。漏了这条的实测现象：
+ *   platform fcc00000.usb: deferred probe pending: dwc3: failed to get extcon
+ *   platform fd000000.usb: deferred probe pending: dwc3: failed to initialize core
+ * 结果 USB3.0 两个控制器全部不注册（lsusb 只剩 2×EHCI + 2×OHCI）。
+ */
+&usb2phy0 {
+	status = "okay";
+};
+
 &usb2phy0_host {
 	phy-supply = <&vcc5v0_usb_host>;
 	status = "okay";

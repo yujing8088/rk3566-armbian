@@ -23,6 +23,7 @@ on:
   push:
     paths:
       - "dts/**"
+      - "drivers/**"
       - "userpatches/**"
       - ".github/workflows/build-armbian.yml"
 
@@ -133,13 +134,63 @@ jobs:
             USE_LOCAL_APT_DEB_CACHE=no \
             SHARE_LOG=no
 
+      - name: 编译 AIC8800 无线/蓝牙驱动（与内核同一套工具链）
+        working-directory: build
+        run: |
+          set -e
+          KSRC=$(ls -d cache/sources/linux-kernel-worktree/*/ | head -1)
+          echo "KSRC=$KSRC"
+          test -f "${KSRC}.config" || { echo "内核树缺少 .config"; exit 1; }
+          # 必须用 Armbian 自己下载的交叉工具链（与内核同版本 gcc），
+          # 否则模块的 ftrace/BTI 代码生成与内核不一致，insmod 会在
+          # ftrace_init_nop -> patch_map 触发 BUG。
+          CROSS=$(find cache/toolchain -path '*/bin/aarch64-linux-gnu-gcc' | head -1)
+          echo "CROSS=$CROSS"
+          [ -n "$CROSS" ] || { echo "找不到交叉工具链"; exit 1; }
+          "$CROSS" --version | head -1
+          make -C "$KSRC" M="$GITHUB_WORKSPACE/drivers/aic8800" \
+               ARCH=arm64 CROSS_COMPILE="${CROSS%gcc}" \
+               KCFLAGS="-Wno-error" -j"$(nproc)" modules
+          ls -l "$GITHUB_WORKSPACE"/drivers/aic8800/*/*.ko
+          modinfo -F vermagic "$GITHUB_WORKSPACE"/drivers/aic8800/aic8800_bsp/aic8800_bsp.ko
+
+      - name: 把 AIC8800 驱动注入镜像 rootfs
+        run: |
+          set -e
+          IMG=$(ls build/output/images/*.img | head -1)
+          echo "image: $IMG"
+          LOOP=$(sudo losetup -fP --show "$IMG")
+          echo "loop: $LOOP"
+          sudo partprobe "$LOOP" || true
+          sleep 2
+          ROOTPART="${LOOP}p1"
+          [ -b "$ROOTPART" ] || ROOTPART=$(ls ${LOOP}p* | tail -1)
+          echo "rootfs: $ROOTPART"
+          sudo mkdir -p /mnt/r
+          sudo mount "$ROOTPART" /mnt/r
+          KVER=$(ls /mnt/r/lib/modules | head -1)
+          echo "KVER=$KVER"
+          sudo mkdir -p "/mnt/r/lib/modules/$KVER/extra"
+          sudo cp drivers/aic8800/*/*.ko "/mnt/r/lib/modules/$KVER/extra/"
+          sudo depmod -b /mnt/r "$KVER"
+          grep -q aic8800 "/mnt/r/lib/modules/$KVER/modules.dep" && echo "✅ modules.dep 已含 aic8800"
+          printf 'aic8800_bsp\naic8800_fdrv\n' | sudo tee /mnt/r/etc/modules-load.d/aic8800.conf
+          # 固件实际在 /lib/firmware/aic8800/SDIO/<芯片>/ 下，用模块参数覆盖默认路径
+          sudo mkdir -p /mnt/r/etc/modprobe.d
+          printf 'options aic8800_bsp aic_fw_path=/lib/firmware/aic8800/SDIO/aic8800D80\n' \
+            | sudo tee /mnt/r/etc/modprobe.d/aic8800.conf
+          sudo sync
+          sudo umount /mnt/r
+          sudo losetup -d "$LOOP"
+          echo "注入完成"
+
       - name: 验证镜像内容（面板 DTB + panel-simple-dsi.ko + 触摸固件）
         working-directory: build
         run: |
           set -e
           IMG=$(ls output/images/*.img | head -1)
           echo "image: $IMG ($(stat -c %s "$IMG") bytes)"
-          for pat in "panel-dsi-simple" "panel-simple-dsi.ko" "gslx680_fw.fw"; do
+          for pat in "panel-dsi-simple" "panel-simple-dsi.ko" "gslx680_fw.fw" "aic8800_fdrv.ko" "aic8800_bsp.ko"; do
             if grep -qaF "$pat" "$IMG"; then
               echo "✅ $pat 已在镜像中"
             else
