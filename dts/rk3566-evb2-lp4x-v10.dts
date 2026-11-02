@@ -429,11 +429,26 @@
 	status = "okay";
 };
 
-/* eMMC (8bit) —— 与厂商 DTB 严格一致：不开 HS200（时序边缘会写坏数据，
- * 表现为每次开机 ext4 journal aborted），仅 high-speed 52MHz 稳定档 */
+/*
+ * eMMC：必须把 max-frequency 限制在 52MHz。
+ *
+ * 注意：仅仅不在 DT 里写 mmc-hs200-1_8v 是**没用**的。rk3568 走的是
+ * sdhci_dwcmshc_rk35xx_ops，其 postinit(dwcmshc_rk35xx_postinit) 只在
+ *   host->mmc->f_max <= 52000000
+ * 时才清掉 MMC_CAP2_HS200/HS400 和 DDR；否则 HS200 默认生效。
+ *
+ * 本板无 PMIC，VCCQ 无法切到 1.8V，HS200@200MHz 会让大数据块写入 CRC 失败：
+ *   mmc0: new HS200 MMC card
+ *   I/O error, dev mmcblk0 ... op 0x1:(WRITE)
+ *   Aborting journal on device mmcblk0p1-8
+ *   EXT4-fs: Detected aborted journal -> Remounting filesystem read-only
+ * 进而 Armbian 首启扩容被拒（online resizing is not allowed），系统恒为只读。
+ *
+ * 52MHz 即 8bit high-speed，DLL 不参与，txclk-tapnum 不再影响时序。
+ */
 &sdhci {
 	bus-width = <8>;
-	max-frequency = <200000000>;
+	max-frequency = <52000000>;
 	non-removable;
 	rockchip,txclk-tapnum = <0x8>;
 	status = "okay";
