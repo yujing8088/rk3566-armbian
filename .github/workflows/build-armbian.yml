@@ -158,7 +158,7 @@ jobs:
             echo "下载 ARM GNU Toolchain 14.2.rel1（gcc 14.2.0，与内核 14.2.0 一致）"
             sudo mkdir -p /opt/armtc
             curl -fsSL -o /tmp/tc.tar.xz \
-              https://developer.arm.com/-/media/Files/downloads/gnu-a/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
+              https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
             sudo tar xf /tmp/tc.tar.xz -C /opt/armtc --strip-components=1
             rm -f /tmp/tc.tar.xz
             CROSS=/opt/armtc/bin/aarch64-none-linux-gnu-gcc
@@ -175,6 +175,16 @@ jobs:
                KCFLAGS="-Wno-error" -j"$(nproc)" modules
           ls -l "$GITHUB_WORKSPACE"/drivers/aic8800/*/*.ko
           modinfo -F vermagic "$GITHUB_WORKSPACE"/drivers/aic8800/aic8800_bsp/aic8800_bsp.ko
+
+      - name: 上传驱动模块（失败也能单独装到板上）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aic8800-modules
+          path: drivers/aic8800/*/*.ko
+          if-no-files-found: ignore
+          retention-days: 30
+          compression-level: 6
 
       - name: 把 AIC8800 驱动注入镜像 rootfs
         run: |
