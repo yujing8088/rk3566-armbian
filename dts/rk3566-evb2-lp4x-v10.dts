@@ -636,14 +636,31 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&lcd_rst_gpio &lcd_en_gpio>;
 
-		/* DSI 参数（值为内核 mipi_display.h / drm_mipi_dsi.h 常量）：
-		 * 厂商 BSP 的 0xa03 = VIDEO|BURST|NON_CONTINUOUS|BIT11。
-		 * mainline dw-mipi-dsi 对 BURST/CLOCK_NON_CONTINUOUS 的实现与
-		 * BSP 差异很大：burst 下会压缩消隐并在空闲时关 HS 时钟，
-		 * 实测 PHY 全部时钟开、vblank 正常但面板收不到任何数据
-		 * （纯灰白）。改用最保守的纯 VIDEO 模式（连续时钟、
-		 * non-burst with sync pulses 由驱动按 hsa/hbp/hfp 推导）。 */
-		dsi,flags = <0x01>;
+		/* DSI 视频模式位（drm_mipi_dsi.h）：
+		 *   0x001 MIPI_DSI_MODE_VIDEO             —— video mode
+		 *   0x002 MIPI_DSI_MODE_VIDEO_BURST       —— burst：控制器自行打包每行
+		 *   0x200 MIPI_DSI_CLOCK_NON_CONTINUOUS   —— 空闲关 HS 时钟，lane 回 LP-11
+		 *   0x400 MIPI_DSI_MODE_LPM               —— DCS 命令走 LP 模式
+		 *
+		 * 板上实测结论（v13 逐值 fdtput + reboot 验证）：
+		 *   0x405 / 0x403 / 0x603 / 0x605 都能点亮并正常显示文字，
+		 *   0x205（无 LPM）与 0x01 / 0x0b 全部灰白。
+		 *
+		 * 两个必要条件，缺一不可：
+		 * 1) LPM(0x400)：drm_mipi_dsi.c:456 只在 mode_flags 含
+		 *    MIPI_DSI_MODE_LPM 时给 msg 打 USE_LPM；dw-mipi-dsi.c:380
+		 *    据此置 CMD_MODE_ALL_LP / ENABLE_LOW_POWER_CMD。缺此位则
+		 *    0x11/0x29 以 HS 模式发出，面板尚在 sleep、未进 HS 能力态，
+		 *    命令被静默丢弃（FIFO 写成功、dmesg 无报错）→ 纯灰白。
+		 * 2) BURST(0x002)：非 burst 模式下 DSI 行时序必须与 VOP 的 DPI
+		 *    逐拍对齐，实测结构（四象限方位/颜色）全对但每行乱码；
+		 *    burst 由控制器自行打包，对交接误差不敏感 → 画面清晰。
+		 *    这也与厂商 BSP 的 0xa03（VIDEO|BURST|NON_CONT）一致。
+		 *
+		 * 最终取 0x603 = VIDEO|BURST|NON_CONTINUOUS|LPM，与厂商语义等价
+		 * （0xa03 的 bit11 是 BSP 私有位，mainline 无对应）。
+		 * 若日后出现偶发闪烁，可降级为 0x403（BURST+LPM，连续时钟）。 */
+		dsi,flags = <0x603>;
 		dsi,format = <0>;
 		dsi,lanes = <4>;
 
