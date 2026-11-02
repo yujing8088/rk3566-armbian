@@ -20,6 +20,7 @@
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/soc/rockchip,vop2.h>
 #include "rk3566.dtsi"
 
 / {
@@ -639,12 +640,23 @@
 	};
 };
 
+/*
+ * VOP vp1 的 DSI0 输出端点。
+ *
+ * 这里的 reg 不是随便填的端口号，而是「输出接口类型」编码，值必须等于
+ * dt-bindings/soc/rockchip,vop2.h 里的 ROCKCHIP_VOP2_EP_MIPI0(=4)。
+ * 内核 rk3568_set_intf_mux() 用 of_graph 拿到本端点的 reg 当作接口 ID，
+ * 再 switch 到对应 case 去写 GRF 的 port mux；如果 reg 缺失(默认 0)，
+ * 会直接打 "Invalid interface id 0 on vpN" 并 return，port mux 永远不生效，
+ * 表现为：绑定全部成功、fb0 也建出来了，但屏幕上只有背光(灰屏)，
+ * 且 dmesg 里刷 "wait port_mux done timeout" + "flip_done timed out"。
+ */
 &vp1 {
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	vp1_out_dsi0: endpoint@0 {
-		reg = <0>;
+	vp1_out_dsi0: endpoint@ROCKCHIP_VOP2_EP_MIPI0 {
+		reg = <ROCKCHIP_VOP2_EP_MIPI0>;
 		remote-endpoint = <&dsi0_in_vp1>;
 	};
 };
