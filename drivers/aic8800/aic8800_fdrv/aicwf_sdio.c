@@ -260,7 +260,7 @@ static void aicwf_netif_timer(struct timer_list *t)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 		struct aic_sdio_dev *sdiodev = (struct aic_sdio_dev *) data;
 #else
-		struct aic_sdio_dev *sdiodev = from_timer(sdiodev, t, netif_timer);
+		struct aic_sdio_dev *sdiodev = timer_container_of(sdiodev, t, netif_timer);
 #endif
 
 	if (!work_pending(&sdiodev->netif_work))
@@ -296,7 +296,7 @@ static void aicwf_temp_ctrl_timer(struct timer_list *t)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	struct aic_sdio_dev *sdiodev = (struct aic_sdio_dev *) data;
 #else
-	struct aic_sdio_dev *sdiodev = from_timer(sdiodev, t, tp_ctrl_timer);
+	struct aic_sdio_dev *sdiodev = timer_container_of(sdiodev, t, tp_ctrl_timer);
 #endif
 
 	if (!work_pending(&sdiodev->tp_ctrl_work))
@@ -1022,12 +1022,12 @@ static int aicwf_sdio_suspend(struct device *dev)
 	}
 
 #ifdef CONFIG_TEMP_CONTROL
-	del_timer_sync(&sdiodev->tp_ctrl_timer);
+	timer_delete_sync(&sdiodev->tp_ctrl_timer);
 	cancel_work_sync(&sdiodev->tp_ctrl_work);
 
 	mod_timer(&sdiodev->tp_ctrl_timer, jiffies + msecs_to_jiffies(TEMP_GET_INTERVAL));
 
-	del_timer_sync(&sdiodev->netif_timer);
+	timer_delete_sync(&sdiodev->netif_timer);
 	cancel_work_sync(&sdiodev->netif_work);
 #endif
 
@@ -1280,13 +1280,13 @@ void aicwf_sdio_exit(void)
 #ifdef CONFIG_TEMP_CONTROL
 		if (timer_pending(&g_rwnx_plat->sdiodev->tp_ctrl_timer)) {
 			AICWFDBG(LOGINFO, "%s del tp_ctrl_timer\n", __func__);
-			del_timer_sync(&g_rwnx_plat->sdiodev->tp_ctrl_timer);
+			timer_delete_sync(&g_rwnx_plat->sdiodev->tp_ctrl_timer);
 		}
 		cancel_work_sync(&g_rwnx_plat->sdiodev->tp_ctrl_work);
 
 		if (timer_pending(&g_rwnx_plat->sdiodev->netif_timer)) {
 			AICWFDBG(LOGINFO, "%s del netif_timer\n", __func__);
-			del_timer_sync(&g_rwnx_plat->sdiodev->netif_timer);
+			timer_delete_sync(&g_rwnx_plat->sdiodev->netif_timer);
 		}
 		cancel_work_sync(&g_rwnx_plat->sdiodev->netif_work);
 #endif
@@ -2804,7 +2804,7 @@ static void aicwf_sdio_bus_pwrctl(struct timer_list *t)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	struct aic_sdio_dev *sdiodev = (struct aic_sdio_dev *) data;
 #else
-	struct aic_sdio_dev *sdiodev = from_timer(sdiodev, t, timer);
+	struct aic_sdio_dev *sdiodev = timer_container_of(sdiodev, t, timer);
 #endif
 
 	if (sdiodev->bus_if->state == BUS_DOWN_ST) {
@@ -3001,7 +3001,7 @@ void aicwf_sdio_pwrctl_timer(struct aic_sdio_dev *sdiodev, uint duration)
 	spin_lock_bh(&sdiodev->pwrctl_lock);
 	if (!duration) {
 		if (timer_pending(&sdiodev->timer))
-			del_timer_sync(&sdiodev->timer);
+			timer_delete_sync(&sdiodev->timer);
 	} else {
 		sdiodev->active_duration = duration;
 		timeout = msecs_to_jiffies(sdiodev->active_duration);

@@ -170,7 +170,7 @@ jobs:
             echo "module gcc: $MG"
             [ "${MG%.*}" = "$KGCC" ] || { echo "!! 工具链 $MG 与内核 $KGCC 不一致"; exit 1; }
           fi
-          make -C "$KSRC" M="$GITHUB_WORKSPACE/drivers/aic8800" \
+          make -C "$KSRC" M="$GITHUB_WORKSPACE/drivers/aic8800" -k \
                ARCH=arm64 CROSS_COMPILE="${CROSS%gcc}" \
                KCFLAGS="-Wno-error" -j"$(nproc)" modules
           ls -l "$GITHUB_WORKSPACE"/drivers/aic8800/*/*.ko

@@ -579,7 +579,7 @@ static int bluesleep_start(void)
 
 	return 0;
 fail:
-	del_timer(&rx_timer);
+	timer_delete(&rx_timer);
 	atomic_inc(&open_count);
 
 	return retval;
@@ -602,7 +602,7 @@ static void bluesleep_stop(void)
 	/* assert BT_WAKE */
 	gpio_set_value(bsi->ext_wake, bsi->ext_wake_assert);
 
-	del_timer(&rx_timer);
+	timer_delete(&rx_timer);
 	clear_bit(BT_PROTO, &flags);
 
 	if (test_bit(BT_ASLEEP, &flags)) {
@@ -949,7 +949,7 @@ static int bluesleep_remove(struct platform_device *pdev)
 		if (disable_irq_wake(bsi->host_wake_irq))
 			BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
 		free_irq(bsi->host_wake_irq, &bsi->pdev->dev);
-		del_timer(&rx_timer);
+		timer_delete(&rx_timer);
 		if (test_bit(BT_ASLEEP, &flags))
 			hsuart_power(1);
 	}
