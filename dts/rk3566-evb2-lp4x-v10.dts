@@ -428,10 +428,11 @@
 	status = "okay";
 };
 
-/* eMMC (HS200, 8bit) */
+/* eMMC (8bit) —— 与厂商 DTB 严格一致：不开 HS200（时序边缘会写坏数据，
+ * 表现为每次开机 ext4 journal aborted），仅 high-speed 52MHz 稳定档 */
 &sdhci {
 	bus-width = <8>;
-	mmc-hs200-1_8v;
+	max-frequency = <200000000>;
 	non-removable;
 	rockchip,txclk-tapnum = <0x8>;
 	status = "okay";
