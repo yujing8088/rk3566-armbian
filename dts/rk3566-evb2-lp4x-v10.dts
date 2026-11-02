@@ -566,8 +566,25 @@
 	 * DSI 像素时钟远低于面板需要的 ~63MHz，屏无法同步 →
 	 * 背光亮、液晶不出图，即"全程纯灰白、从未出现过文字"。
 	 *
-	 * 改为 VPLL 后再预置 70MHz（与 display-timings 的 clock-frequency 一致），
-	 * clk 框架会把 VPLL 倍频到合适档位再由 dclk 分频器分频。
+	 * v10 实测：只把父时钟换成 PLL_VPLL 还不够，clk_summary 里 dclk_vop1
+	 * 依旧是 24000000。原因在时钟树本身（drivers/clk/rockchip/clk-rk3568.c）：
+	 *
+	 *   COMPOSITE(DCLK_VOP1, "dclk_vop1", hpll_vpll_gpll_cpll_p,
+	 *             CLK_SET_RATE_NO_REPARENT, ... 0, 8, DFLAGS ...)
+	 *
+	 *  1) CLK_SET_RATE_NO_REPARENT —— clk_set_rate() 不会去换父时钟；
+	 *  2) 没有 CLK_SET_RATE_PARENT —— 频率需求不向父 PLL 传播，只会在
+	 *     「当前父时钟频率」下挑分频比；父 PLL 只有 24MHz 时分频器只能降频，
+	 *     拿不到 70MHz，clk_set_rate() 静默失败
+	 *     （vop2.c 里 `clk_set_rate(vp->dclk, clock);` 返回值被丢弃，
+	 *       所以 dmesg 一条报错都没有，dclk 永远 24MHz）。
+	 *
+	 * 因此必须两步都做：
+	 *  a) 这里把 dclk_vop1 的父时钟指定为 PLL_VPLL；
+	 *  b) 再把 PLL_VPLL 本身预置为 700MHz（放在 &dsi0 节点里，见下）——
+	 *     rk3568_pll_rates 表内有 RK3036_PLL_RATE(700000000, 3, 350, 4, 1)
+	 *     = 24MHz*350/3/4，可精确成立；700MHz / 10 = 70.0MHz 整，
+	 *     dclk 的 8bit 整数分频器正好整除。
 	 */
 	assigned-clocks = <&cru DCLK_VOP1>;
 	assigned-clock-parents = <&cru PLL_VPLL>;
@@ -593,6 +610,22 @@
 	status = "okay";
 	#address-cells = <1>;
 	#size-cells = <0>;
+
+	/*
+	 * 视频 PLL 预置 700MHz：配合 &vop 里 dclk_vop1 的 /10 分频得到精确
+	 * 70MHz 像素时钟（与 display-timings 的 clock-frequency 一致）。
+	 *
+	 * assigned-clocks 可以指向任意 clock provider，不必是本节点的时钟；
+	 * 只写 assigned-clock-rates 是合法的——clk-conf.c 的 __set_clk_parents()
+	 * 在节点没有 assigned-clock-parents 属性时循环 0 次直接返回 0，
+	 * 不会阻止后面的 rate 设置。
+	 *
+	 * dsi0 一定在 DRM modeset 之前 probe，所以 vop2_crtc_atomic_enable() 里
+	 * 那次 clk_set_rate(dclk, 70MHz) 执行时，父 PLL 已经是 700MHz，分频比
+	 * 会算成 10，dclk 真正落到 70MHz。
+	 */
+	assigned-clocks = <&cru PLL_VPLL>, <&cru DCLK_VOP1>;
+	assigned-clock-rates = <700000000>, <70000000>;
 
 	panel@0 {
 		compatible = "panel-dsi-simple";
