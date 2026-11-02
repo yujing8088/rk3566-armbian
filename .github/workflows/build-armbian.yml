@@ -141,13 +141,35 @@ jobs:
           KSRC=$(ls -d cache/sources/linux-kernel-worktree/*/ | head -1)
           echo "KSRC=$KSRC"
           test -f "${KSRC}.config" || { echo "内核树缺少 .config"; exit 1; }
-          # 必须用 Armbian 自己下载的交叉工具链（与内核同版本 gcc），
-          # 否则模块的 ftrace/BTI 代码生成与内核不一致，insmod 会在
-          # ftrace_init_nop -> patch_map 触发 BUG。
-          CROSS=$(find cache/toolchain -path '*/bin/aarch64-linux-gnu-gcc' | head -1)
+          # 内核编译所用 gcc 版本（Armbian 把工具链装在 docker 镜像里，
+          # 宿主机 cache/toolchain 已不存在，需要自行提供同版本交叉 gcc）。
+          # 必须与内核同版本 gcc，否则模块 ftrace/BTI 代码生成不一致，
+          # insmod 会在 ftrace_init_nop -> patch_map 触发 BUG（实测）。
+          KGCC=$(grep -m1 -oP 'define LINUX_COMPILER "\K[^"]*' \
+                 "${KSRC}include/generated/compile.h" 2>/dev/null \
+                 | grep -oP '[0-9]+\.[0-9]+' | head -1 || true)
+          echo "kernel gcc: ${KGCC:-unknown}"
+          CROSS=""
+          for c in $(find cache/toolchain -path '*/bin/aarch64-*-linux-gnu-gcc' 2>/dev/null); do
+            v=$("$c" -dumpfullversion 2>/dev/null || true)
+            if [ -z "$KGCC" ] || [ "${v%.*}" = "$KGCC" ]; then CROSS="$c"; break; fi
+          done
+          if [ -z "$CROSS" ]; then
+            echo "下载 ARM GNU Toolchain 14.2.rel1（gcc 14.2.0，与内核 14.2.0 一致）"
+            sudo mkdir -p /opt/armtc
+            curl -fsSL -o /tmp/tc.tar.xz \
+              https://developer.arm.com/-/media/Files/downloads/gnu-a/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
+            sudo tar xf /tmp/tc.tar.xz -C /opt/armtc --strip-components=1
+            rm -f /tmp/tc.tar.xz
+            CROSS=/opt/armtc/bin/aarch64-none-linux-gnu-gcc
+          fi
           echo "CROSS=$CROSS"
-          [ -n "$CROSS" ] || { echo "找不到交叉工具链"; exit 1; }
           "$CROSS" --version | head -1
+          if [ -n "$KGCC" ]; then
+            MG=$("$CROSS" -dumpfullversion)
+            echo "module gcc: $MG"
+            [ "${MG%.*}" = "$KGCC" ] || { echo "!! 工具链 $MG 与内核 $KGCC 不一致"; exit 1; }
+          fi
           make -C "$KSRC" M="$GITHUB_WORKSPACE/drivers/aic8800" \
                ARCH=arm64 CROSS_COMPILE="${CROSS%gcc}" \
                KCFLAGS="-Wno-error" -j"$(nproc)" modules
@@ -215,6 +237,8 @@ jobs:
           ls -l build/output/images/*.img 2>/dev/null || true
 
       - name: 上传镜像
+        # 即便后续步骤失败也把已编好的镜像传出来，避免 2 小时构建白费
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: armbian-rk3566-evb2-lp4x-v10-${{ inputs.branch || 'current' }}-${{ inputs.release || 'bookworm' }}
@@ -223,6 +247,6 @@ jobs:
             build/output/images/*.img.*
             build/output/images/*.txt
             build/output/images/*.sha
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 15
           compression-level: 0
