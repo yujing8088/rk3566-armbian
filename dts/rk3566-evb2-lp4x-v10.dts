@@ -548,9 +548,22 @@
 
 &vop {
 	status = "okay";
-	/* 学 rock-3a：把 dclk 父时钟固定到 HPLL，避免选到不可分频的时钟源 */
-	assigned-clocks = <&cru DCLK_VOP0>, <&cru DCLK_VOP1>;
-	assigned-clock-parents = <&pmucru PLL_HPLL>, <&pmucru PLL_HPLL>;
+	/*
+	 * dclk_vp1 必须挂在可编程的 PLL_VPLL（rk3568-cru.h: PLL_VPLL = 5，属 cru）。
+	 *
+	 * 之前这里是"学 rock-3a"抄来的 <&pmucru PLL_HPLL>：
+	 * PLL_HPLL = 2，mainline 里没有人给它倍频，实测就是 xin24m 直通 24MHz；
+	 * 而 dclk 分频器只能降频不能升频，于是 vop2_crtc_atomic_enable() 里的
+	 * clk_set_rate(dclk, 70MHz) 静默失败，dclk_vp1 永远停在 24MHz，
+	 * DSI 像素时钟远低于面板需要的 ~63MHz，屏无法同步 →
+	 * 背光亮、液晶不出图，即"全程纯灰白、从未出现过文字"。
+	 *
+	 * 改为 VPLL 后再预置 70MHz（与 display-timings 的 clock-frequency 一致），
+	 * clk 框架会把 VPLL 倍频到合适档位再由 dclk 分频器分频。
+	 */
+	assigned-clocks = <&cru DCLK_VOP1>;
+	assigned-clock-parents = <&cru PLL_VPLL>;
+	assigned-clock-rates = <70000000>;
 };
 
 &vop_mmu {
