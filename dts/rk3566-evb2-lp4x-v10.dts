@@ -542,9 +542,11 @@
 };
 
 /*
- * 显示链路：VOP vp0 -> DSI0 -> 面板（MIPI-DSI 800x1280, 4 lane, 70MHz）
- * 面板由 panel-simple.c DSI 变体驱动（内核补丁新增 compatible
- * "rockchip,evb2-lp4x-panel"，prepare 时发 11h/29h + 硬复位）。
+ * 显示链路：VOP vp1 -> DSI0 -> 面板（MIPI-DSI 800x1280, 4 lane, 70MHz）
+ *
+ * 关键：厂商 DTB 里 DSI0 接的是 vp1（dsi0_in_vp1 为 okay，vp0 那路是
+ * disabled），这里必须一致，否则视频流不出屏（灰屏）。
+ * 面板由 Armbian 内置通用驱动 panel-dsi-simple 驱动，参数全从 DT 读。
  */
 &dsi_dphy0 {
 	status = "okay";
@@ -561,6 +563,8 @@
 		backlight = <&backlight>;
 		enable-gpios = <&gpio0 RK_PC7 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&gpio0 RK_PD5 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcd_rst_gpio &lcd_en_gpio>;
 
 		/* DSI 参数（值为内核 mipi_display.h / drm_mipi_dsi.h 常量）：
 		 * flags = VIDEO|BURST|NO_EOT|LPM = 0xa03, format = RGB888 = 0 */
@@ -568,19 +572,25 @@
 		dsi,format = <0>;
 		dsi,lanes = <4>;
 
-		/* 上电时序（ms）：enable → 复位脉冲 → init 延时 → 发送 init 序列 */
-		prepare-delay-ms = <10>;
-		reset-delay-ms = <20>;
-		init-delay-ms = <10>;
-		enable-delay-ms = <20>;
-		disable-delay-ms = <20>;
+		/* 上电时序（ms）——取自厂商 DTB：prepare 60 / reset 60 /
+		 * init 60 / enable 120 / disable 60 / unprepare 60 */
+		prepare-delay-ms = <60>;
+		reset-delay-ms = <60>;
+		init-delay-ms = <60>;
+		enable-delay-ms = <120>;
+		disable-delay-ms = <60>;
 		unprepare-delay-ms = <60>;
 
-		/* init 命令字节流，每条 {dtype, wait_ms, len, payload...}：
-		 * 0x11 sleep-out（后等 120ms），0x29 display-on（后等 20ms） */
+		/* 命令字节流，每条 {dtype, wait_ms, len, payload...}：
+		 * 上电 0x11 sleep-out(等120ms) → 0x29 display-on(等20ms)
+		 * 掉电 0x28 display-off → 0x10 sleep-in */
 		panel-init-sequence = [
 			05 78 01 11
 			05 14 01 29
+		];
+		panel-exit-sequence = [
+			05 00 01 28
+			05 00 01 10
 		];
 
 		width-mm = <108>;
@@ -599,9 +609,10 @@
 				vfront-porch = <16>;
 				vback-porch = <15>;
 				vsync-len = <6>;
+				/* 与厂商 DTB 完全一致：四路极性均为 active low */
 				hsync-active = <0>;
 				vsync-active = <0>;
-				de-active = <1>;
+				de-active = <0>;
 				pixelclk-active = <0>;
 			};
 		};
@@ -615,8 +626,8 @@
 
 	ports {
 		port@0 {
-			dsi0_in_vp0: endpoint {
-				remote-endpoint = <&vp0_out_dsi0>;
+			dsi0_in_vp1: endpoint {
+				remote-endpoint = <&vp1_out_dsi0>;
 			};
 		};
 
@@ -628,13 +639,26 @@
 	};
 };
 
-&vp0 {
+&vp1 {
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	vp0_out_dsi0: endpoint@0 {
+	vp1_out_dsi0: endpoint@0 {
 		reg = <0>;
-		remote-endpoint = <&dsi0_in_vp0>;
+		remote-endpoint = <&dsi0_in_vp1>;
+	};
+};
+
+/* 面板控制脚：GPIO0_D5(复位) / GPIO0_C7(使能)，均为 GPIO 功能无上下拉 */
+&pinctrl {
+	lcd {
+		lcd_rst_gpio: lcd-rst-gpio {
+			rockchip,pins = <0 RK_PD5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		lcd_en_gpio: lcd-enable-gpio {
+			rockchip,pins = <0 RK_PC7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
 	};
 };
 
