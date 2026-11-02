@@ -339,11 +339,19 @@
 	};
 
 	/*
-	 * 触摸：Silead GSLX680（10 点），I2C 地址 0x40
+	 * 触摸：Silead GSLX680（"gslX6801" 实例），I2C 地址 0x40
 	 *   - 中断 GPIO0_B5，低电平触发（厂商 touch-gpio flags 0x8）
 	 *   - 复位 GPIO0_B6，高有效（厂商 reset-gpio）
-	 *   - 触摸坐标范围 1280x800（横屏）；固件文件 /lib/firmware/silead/gsl1680-evb2.fw
-	 *     需从厂商内核提取后放入，否则 silead 探测失败（不影响其他功能）
+	 *   - 触摸坐标范围 1280x800（横屏）
+	 *
+	 * 固件必须是 gslx680_fw.fw（5247 条），对应厂商内核里 compatible
+	 * "gslX6801" 那个实例的 GSLX680_FW 数组（已逐字节比对一致）。
+	 * 曾误用 gsl3673_fw_2.fw（4818 条）——那是 gsl3673_800x1280 另一个
+	 * 实例的固件，下载后 status 永远不是 0x5a5a5a5a，触摸完全无响应。
+	 *
+	 * 内核侧还要配套补丁 1000-input-silead-support-gslx680-download-protocol.patch：
+	 *   [F0]=0x12 进下载模式、[80]=0x03、批量 32 条 129 字节下发、
+	 *   下载后再 reset+startup 一次 —— 缺任何一项芯片都停在 ROM bootloader。
 	 */
 	touchscreen@40 {
 		compatible = "silead,gsl1680";
@@ -366,7 +374,7 @@
 		power-gpios = <&gpio0 RK_PB6 GPIO_ACTIVE_HIGH>;
 		touchscreen-size-x = <1280>;
 		touchscreen-size-y = <800>;
-		firmware-name = "gsl1680-evb2.fw";
+		firmware-name = "gslx680_fw.fw";
 	};
 };
 

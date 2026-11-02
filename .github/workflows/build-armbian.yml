@@ -98,6 +98,10 @@ jobs:
             mkdir -p build/userpatches/kernel
             cp -rv userpatches/patch/kernel/. build/userpatches/kernel/
           fi
+          if [ -d userpatches/kernel ]; then
+            mkdir -p build/userpatches/kernel
+            cp -rv userpatches/kernel/. build/userpatches/kernel/
+          fi
           [ -d userpatches/firmware ] && cp -rv userpatches/firmware build/userpatches/ || true
           ls -lR build/userpatches/kernel 2>/dev/null || true
           ls -l build/userpatches/dtb/ build/userpatches/config/boards/
@@ -114,8 +118,10 @@ jobs:
           # apt-get update 报 getline (12: Cannot allocate memory) 而构建失败。
           #
           # 注意：面板驱动用的是 Armbian 内置 panel-dsi-simple（panel-simple-dsi.ko），
-          # 不需要内核补丁。若以后要改内核源码，须加 ARTIFACT_IGNORE_CACHE=yes
-          # 并确认 userpatches/kernel/ 下补丁被应用（缓存哈希不含 userpatches 内容！）
+          # 不需要内核补丁。触摸需要内核补丁（silead.c 的 GSLX680 下载协议），
+          # 所以必须 ARTIFACT_IGNORE_CACHE=yes —— 内核 artifact 的缓存哈希不含
+          # userpatches 内容，命中缓存会导致补丁从未被编译进去。
+          ARTIFACT_IGNORE_CACHE=yes \
           ./compile.sh build \
             BOARD=rk3566-evb2-lp4x-v10 \
             BRANCH="${BRANCH}" \
@@ -133,7 +139,7 @@ jobs:
           set -e
           IMG=$(ls output/images/*.img | head -1)
           echo "image: $IMG ($(stat -c %s "$IMG") bytes)"
-          for pat in "panel-dsi-simple" "panel-simple-dsi.ko" "gsl1680-evb2.fw"; do
+          for pat in "panel-dsi-simple" "panel-simple-dsi.ko" "gslx680_fw.fw"; do
             if grep -qaF "$pat" "$IMG"; then
               echo "✅ $pat 已在镜像中"
             else
@@ -141,6 +147,13 @@ jobs:
               exit 1
             fi
           done
+          # silead 内核补丁是否生效：优先看模块，内建则看内核镜像。
+          # 仅提示，不作为失败条件（模块可能被压缩或内建）。
+          if strings output/debs/linux-image-*.deb 2>/dev/null | grep -q "Firmware page switch error"; then
+            echo "✅ silead GSLX680 补丁已包含在内核 deb 中"
+          else
+            echo "⚠️ 未在 deb 中确认补丁字符串，请核对构建日志里 1000-input-silead 补丁是否应用"
+          fi
 
       - name: 结果信息
         if: always()

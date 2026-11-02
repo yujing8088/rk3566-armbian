@@ -65,10 +65,19 @@ function pre_customize_image__install_evb2_dtb() {
 
 # ---------------------------------------------------------------------------
 # GSLX680 触摸固件：从厂商 4.19 内核 kallsyms 定位符号后提取（8 个候选）。
-# 主线 silead.c 的固件格式与 Rockchip {offset,val} 记录流完全一致（8字节/条），
-# 直接可用。默认 gsl1680-evb2.fw = gsl3673_fw_2（厂商驱动 id 名就叫
-# "gsl3673_800x1280"，与本板 800x1280 面板一致）；若触摸无响应，
-# 在板上切换候选：cp /lib/firmware/silead/gsl3673_fw.fw /lib/firmware/silead/gsl1680-evb2.fw
+#
+# 本板触摸节点在厂商 DTS 里是 compatible = "gslX6801"，对应厂商内核中
+# 第一个 gsl 实例（gsl_ts_probe @0x89115e4），其固件数组 GSLX680_FW
+# @0x93ba8f0 共 5247 条，与 gslx680_fw.fw 逐字节完全一致 —— DTS 的
+# firmware-name 已指向它。
+#
+# 另外几个 .fw 是内核里 gsl3673_800x1280 等其他实例的固件（4818/5016/
+# 4719… 条），下载后 status 永远不是 0x5a5a5a5a。gsl1680-evb2.fw 是
+# gsl3673_fw_2 的旧别名，仅为兼容保留，不要再用。
+#
+# 配套内核补丁（必须一起生效，否则芯片停在 ROM bootloader）：
+#   userpatches/kernel/archive/rockchip64-6.18/
+#   1000-input-silead-support-gslx680-download-protocol.patch
 # ---------------------------------------------------------------------------
 function pre_customize_image__install_silead_firmware() {
 	local fwdir="${SRC}/userpatches/firmware/silead"
