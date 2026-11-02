@@ -637,8 +637,13 @@
 		pinctrl-0 = <&lcd_rst_gpio &lcd_en_gpio>;
 
 		/* DSI 参数（值为内核 mipi_display.h / drm_mipi_dsi.h 常量）：
-		 * flags = VIDEO|BURST|NO_EOT|LPM = 0xa03, format = RGB888 = 0 */
-		dsi,flags = <0xa03>;
+		 * 厂商 BSP 的 0xa03 = VIDEO|BURST|NON_CONTINUOUS|BIT11。
+		 * mainline dw-mipi-dsi 对 BURST/CLOCK_NON_CONTINUOUS 的实现与
+		 * BSP 差异很大：burst 下会压缩消隐并在空闲时关 HS 时钟，
+		 * 实测 PHY 全部时钟开、vblank 正常但面板收不到任何数据
+		 * （纯灰白）。改用最保守的纯 VIDEO 模式（连续时钟、
+		 * non-burst with sync pulses 由驱动按 hsa/hbp/hfp 推导）。 */
+		dsi,flags = <0x01>;
 		dsi,format = <0>;
 		dsi,lanes = <4>;
 
