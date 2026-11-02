@@ -350,7 +350,15 @@
 		reg = <0x40>;
 		interrupt-parent = <&gpio0>;
 		interrupts = <RK_PB5 IRQ_TYPE_LEVEL_LOW>;
-		power-gpios = <&gpio0 RK_PB6 GPIO_ACTIVE_HIGH>;
+		/*
+		 * 厂商 reset-gpio = <&gpio0 14 0x0>：GPIO0_B6，高电平=复位。
+		 * 主线 silead.c 只会把「上电」写成逻辑 1（silead_ts_set_power），
+		 * 若声明 ACTIVE_HIGH，则探测时把 B6 拉高 = 一直按住复位，
+		 * 芯片不回应 I2C，probe 报 "Chip ID read error -6"（-ENXIO）。
+		 * 声明为 ACTIVE_LOW 后：上电=物理低=释放复位；同时驱动
+		 * 先 GPIOD_OUT_LOW(物理高) 再置逻辑 1(物理低)，天然形成一个复位脉冲。
+		 */
+		power-gpios = <&gpio0 RK_PB6 GPIO_ACTIVE_LOW>;
 		touchscreen-size-x = <1280>;
 		touchscreen-size-y = <800>;
 		firmware-name = "gsl1680-evb2.fw";
