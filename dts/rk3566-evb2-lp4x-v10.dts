@@ -99,10 +99,41 @@
 
 		key-call {
 			label = "Call Key";
-			linux,code = <169>;		/* KEY_PHONE */
+			linux,code = <87>;		/* KEY_SEND，与厂商 dtb (0x57) 一致 */
 			gpios = <&gpio4 RK_PD1 GPIO_ACTIVE_LOW>;
 			debounce-interval = <2>;
 			wakeup-source;
+		};
+	};
+
+	/*
+	 * 音量键：外接按键板上的 vol+/vol- 不是 GPIO，而是 SARADC 通道 0 上的
+	 * 电阻梯（厂商 dtb adc-keys，但本批按键板分压电阻与厂商 dts 不同）：
+	 *   实测（2026-11-04，vref=vcc_1v8，10bit）：
+	 *     vol-up   raw≈251（≈441mV）  厂商阈值 298268µV 偏低不匹配
+	 *     vol-down raw≈21（≈37mV）    厂商阈值 1750µV 偏低
+	 *     松开     raw=1023（≈1.8V 满量程）
+	 * 按实测取阈值（ adc-keys 按「低于本键阈值且高于更低阈值键」判定区间）：
+	 *   vol-down 区间 (0, 300mV]；vol-up 区间 (300mV, 1000mV]；松开 >1mV 无键
+	 * 电源键/呼叫键见上方 gpio-keys（GPIO0_A3 / GPIO4_D1，低有效）。
+	 */
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 0>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <1800000>;
+		poll-interval = <100>;
+
+		vol-up-key {
+			label = "volume up";
+			linux,code = <115>;		/* KEY_VOLUMEUP */
+			press-threshold-microvolt = <1000000>;
+		};
+
+		vol-down-key {
+			label = "volume down";
+			linux,code = <114>;		/* KEY_VOLUMEDOWN */
+			press-threshold-microvolt = <300000>;
 		};
 	};
 
@@ -536,6 +567,14 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart1m0_xfer &uart1m0_ctsn &uart1m0_rtsn>;
 	status = "okay";
+};
+
+/* SARADC：外接按键板的音量+/-走 ADC 电阻梯（厂商方案）
+ * 必须给 vref-supply：主线驱动 probe 里 regulator_get_voltage() 对哑
+ * regulator 返回 -EINVAL（板上实测 error -22），厂商接的正是 vcc_1v8 */
+&saradc {
+	status = "okay";
+	vref-supply = <&vcc_1v8>;
 };
 
 &uart2 {
