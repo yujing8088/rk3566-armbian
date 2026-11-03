@@ -1,0 +1,22 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * 把 USB2.0/OTG 口（fcc00000, dwc3）从 otg 强制切成 host。
+ *
+ * 背景：板上 USB2.0 口是 OTG/device 双角色口，本机 extcon 报 USB-HOST=0
+ * （ID 悬空）→ dwc3 一直以 peripheral 模式运行，UDC state = not attached，
+ * 插鼠标接收器（同样是 device）永远不可能枚举。
+ * 该口实测有 5V（vcc5v0_otg, GPIO0_C6 = out hi），因此切成 host 后可直接用。
+ *
+ * 注意：dwc3 只在 dr_mode=otg 时才注册 extcon/id notifier，
+ * 因此这里只改 dr_mode 即可，残留的 extcon 属性不会被消费。
+ */
+/ {
+	fragment@0 {
+		target-path = "/usb@fcc00000";
+		__overlay__ {
+			dr_mode = "host";
+		};
+	};
+};

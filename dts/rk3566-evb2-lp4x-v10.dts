@@ -571,8 +571,27 @@
 	status = "okay";
 };
 
+/*
+ * usb_host0_xhci = usb@fcc00000 = 板上丝印「USB2.0」那个口。
+ *
+ * 该口硬件是 OTG/device 双角色口（厂商 Android 下两种都支持），主线
+ * rk3566-base.dtsi 给它 phys=<&usb2phy0_otg> extcon=<&usb2phy0>，
+ * 于是 dwc3 走 otg 模式并依赖 extcon 的 ID 状态。本机 extcon 实测
+ * USB-HOST=0（ID 悬空）→ dwc3 一直停在 peripheral：
+ *     /sys/class/udc/fcc00000.usb → state "not attached"
+ * 插鼠标接收器（本身也是 device）永远枚举不了，表现为「USB 口插什么都没反应」。
+ *
+ * 该口 VBUS 由 vcc5v0_usb2_otg(GPIO0_C6) 供电，实测有 5V，所以直接切成
+ * host 即可当普通 USB-A 主机口用。实测：Logitech 无线接收器
+ * (046d:c53f) 正常枚举，hid-generic 注册 Keyboard/Mouse/Consumer Control，
+ * /dev/input/event1..4 有真实按键事件。
+ *
+ * 若将来要恢复 device/OTG 模式：把 dr_mode 改回 "otg"（或删掉本行），
+ * 并保证 extcon 能读到正确的 ID 电平。
+ */
 &usb_host0_xhci {
 	status = "okay";
+	dr_mode = "host";
 };
 
 &usb_host1_xhci {
