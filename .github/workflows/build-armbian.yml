@@ -134,53 +134,33 @@ jobs:
             USE_LOCAL_APT_DEB_CACHE=no \
             SHARE_LOG=no
 
-      - name: 编译 AIC8800 无线/蓝牙驱动（与内核同一套工具链）
+      - name: 编译 AIC8800 无线/蓝牙驱动（在 Armbian 构建容器内，环境与内核完全一致）
         working-directory: build
         run: |
           set -e
-          KSRC=$(ls -d cache/sources/linux-kernel-worktree/*/ | head -1)
-          echo "KSRC=$KSRC"
-          test -f "${KSRC}.config" || { echo "内核树缺少 .config"; exit 1; }
-          # 内核编译所用 gcc 版本（Armbian 把工具链装在 docker 镜像里，
-          # 宿主机 cache/toolchain 已不存在，需要自行提供同版本交叉 gcc）。
-          # 必须与内核同版本 gcc，否则模块 ftrace/BTI 代码生成不一致，
-          # insmod 会在 ftrace_init_nop -> patch_map 触发 BUG（实测）。
-          KGCC=$(grep -m1 -oP 'define LINUX_COMPILER "\K[^"]*' \
-                 "${KSRC}include/generated/compile.h" 2>/dev/null \
-                 | grep -oP '[0-9]+\.[0-9]+' | head -1 || true)
-          echo "kernel gcc: ${KGCC:-unknown}"
-          CROSS=""
-          for c in $(find cache/toolchain -path '*/bin/aarch64-*-linux-gnu-gcc' 2>/dev/null); do
-            v=$("$c" -dumpfullversion 2>/dev/null || true)
-            if [ -z "$KGCC" ] || [ "${v%.*}" = "$KGCC" ]; then CROSS="$c"; break; fi
-          done
-          if [ -z "$CROSS" ]; then
-            echo "下载 ARM GNU Toolchain 14.2.rel1（gcc 14.2.0，与内核 14.2.0 一致）"
-            sudo mkdir -p /opt/armtc
-            curl -fsSL -o /tmp/tc.tar.xz \
-              https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-            sudo tar xf /tmp/tc.tar.xz -C /opt/armtc --strip-components=1
-            rm -f /tmp/tc.tar.xz
-            CROSS=/opt/armtc/bin/aarch64-none-linux-gnu-gcc
-          fi
-          echo "CROSS=$CROSS"
-          "$CROSS" --version | head -1
-          if [ -n "$KGCC" ]; then
-            MG=$("$CROSS" -dumpfullversion)
-            echo "module gcc: $MG"
-            [ "${MG%.*}" = "$KGCC" ] || { echo "!! 工具链 $MG 与内核 $KGCC 不一致"; exit 1; }
-          fi
-          # 内核 worktree 里的宿主机工具（modpost 等）是 docker（glibc 2.38）编的，
-          # 宿主机 glibc 2.35 跑不了：GLIBC_2.38 not found。删掉用宿主 gcc 重编。
-          # worktree 由 docker 内 root 创建，scripts/mod 目录宿主用户不可写 → sudo。
-          sudo rm -f "$KSRC/scripts/mod/modpost" "$KSRC/scripts/mod/elfcore.h" 2>/dev/null || true
-          sudo make -C "$KSRC" -j"$(nproc)" scripts >/dev/null
-          sudo chmod -R a+rwX "$KSRC/scripts/mod"
-          test -x "$KSRC/scripts/mod/modpost" || { echo "modpost 重编失败"; exit 1; }
-          "$KSRC/scripts/mod/modpost" --help >/dev/null 2>&1 || true
-          make -C "$KSRC" M="$GITHUB_WORKSPACE/drivers/aic8800" -k \
-               ARCH=arm64 CROSS_COMPILE="${CROSS%gcc}" \
-               KCFLAGS="-Wno-error" -j"$(nproc)" modules
+          KREL=$(ls -d cache/sources/linux-kernel-worktree/*/ | head -1)
+          echo "KSRC=$KREL"
+          test -f "${KREL}.config" || { echo "内核树缺少 .config"; exit 1; }
+          # 必须在 Armbian 的 docker 构建容器里编：
+          #  - 宿主机没有交叉 gcc（工具链在镜像内）
+          #  - 内核树里的 modpost 等宿主工具是容器内 glibc2.38 构建的，
+          #    在 runner 宿主机(glibc2.35) 上跑不了
+          #  - gcc 版本、modpost、BTI/PAC 代码生成必须与内核构建时完全一致，
+          #    否则 insmod 会在 ftrace_init_nop -> patch_map 触发 BUG（实测）
+          IMG=ghcr.io/armbian/docker-armbian-build:armbian-debian-trixie-latest
+          docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG"
+          docker run --rm \
+            -v "$PWD:/work" -v "$GITHUB_WORKSPACE:/src" -w /work \
+            -e KREL="$KREL" \
+            "$IMG" bash -lc '
+              set -e
+              cd "/work/$KREL"
+              echo -n "kernel build gcc: "; grep -m1 -oP "Linux version.*" include/generated/compile.h 2>/dev/null || true
+              echo -n "container gcc: "; aarch64-linux-gnu-gcc --version | head -1
+              make M=/src/drivers/aic8800 ARCH=arm64 \
+                   CROSS_COMPILE=aarch64-linux-gnu- \
+                   KCFLAGS="-Wno-error" -k -j"$(nproc)" modules
+            '
           ls -l "$GITHUB_WORKSPACE"/drivers/aic8800/*/*.ko
           modinfo -F vermagic "$GITHUB_WORKSPACE"/drivers/aic8800/aic8800_bsp/aic8800_bsp.ko
 
