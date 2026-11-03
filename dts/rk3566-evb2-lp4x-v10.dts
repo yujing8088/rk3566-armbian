@@ -21,6 +21,7 @@
 #include <dt-bindings/pinctrl/rockchip.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/soc/rockchip,vop2.h>
+#include <dt-bindings/power/rk3568-power.h>
 #include "rk3566.dtsi"
 
 / {
@@ -929,7 +930,7 @@
  * 引脚依据厂商 dtb：
  *   i2c@fe5b0000 pinctrl-0 -> i2c2m1-xfer（GPIO4_B5=SCL / GPIO4_B4=SDA）
  *   vcc-camera-regulator   -> GPIO0_C5 高有效（摄像头供电开关）
- *   hi846 reset-gpios      -> GPIO3_C5(pin29)，pwdn-gpios -> GPIO4_B2(pin10)
+ *   hi846 reset-gpios      -> GPIO3_D5(pin29)，pwdn-gpios -> GPIO4_B2(pin10)
  */
 &i2c2 {
 	status = "okay";
@@ -951,6 +952,29 @@
 	 *   xvclk   = CLK_CIF_OUT，引脚 cif_clkout = GPIO4_C0 mux1
 	 *   供电开关 = GPIO0_C5 -> vcc_camera
 	 *
+	 * 极性与厂商 dtb 完全一致（flags=0 高有效）+ 主线 hi846.c 的 gpiod 逻辑值：
+	 *   - 主线驱动 power_on 写逻辑0（释放）、power_off 写逻辑1（断言）
+	 *   - 厂商驱动运行态 RSTB=低、PWDN=低 → 逻辑0=物理低=运行态
+	 *   - 所以 reset/shutdown 都必须 ACTIVE_HIGH：逻辑1 = 物理高 = 复位/断电
+	 *   - 曾试过 reset=ACTIVE_LOW：驱动上电时把 RSTB 物理拉高=按复位，
+	 *     I2C 全 NAK（2026-11-03 实测）
+	 *
+	 * ★★★ 关键修复 1（2026-11-03 实测）：power-domains = <&power RK3568_PD_VI>
+	 *   cif_clkout(xvclk) 的输出级属于 VI 电源域（RK3568_PD_VI=8，厂商 dtb 的
+	 *   sensor 节点同样挂了 power-domains=<0x21 0x8>）。VI 域断电时，即使 CRU
+	 *   门控已开、IOMUX 已复用，MCLK 引脚实测恒 0（EXT 逐拍读 30 次全 0；
+	 *   对照 GPIO3_B0 的 25MHz 以太网参考时钟同法读出 25 次跳变，证明 EXT 能
+	 *   反映外设脚）。传感器没有 xvclk 就不应答 I2C——这正是"Android 能拍照、
+	 *   Linux 全地址 NAK"的根本原因：Android 打开摄像头时 VI 域上电。
+	 *
+	 * ★★★ 关键修复 2（2026-11-03 实测）：两个 GPIO 都是 ACTIVE_LOW
+	 *   手动拉起 VI 域 + 开 CLK_CIF_OUT 门控后，传感器只在 PWDN(4_B2)=高、
+	 *   RSTB(3_D5)=高 时应答（PWDN=低反而消失）。即"运行态=两脚物理高"。
+	 *   主线 hi846.c 语义：power_on 写逻辑0、power_off 写逻辑1，
+	 *   所以 ACTIVE_LOW 正好把逻辑0 映射为物理高（运行态）。
+	 *   厂商 dtb 里 pwdn/reset 的 flags=0 是 BSP 驱动自己的反相语义，别照抄。
+	 *   读 ID 寄存器：0x0F16=0x46 / 0x0F17=0x08，与驱动期望一致（0x0846）。
+	 *
 	 * 说明：模块的 1.2V 内核电压由模组内部 LDO 产生，vddd 这里指向
 	 * vcc_1v8 仅作 regulator 框架的占位，不改变实际供电。
 	 */
@@ -962,11 +986,13 @@
 		clocks = <&cru CLK_CIF_OUT>;
 		clock-names = "xvclk";
 
+		power-domains = <&power RK3568_PD_VI>;
+
 		pinctrl-names = "default";
 		pinctrl-0 = <&cif_clk>;
 
-		reset-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
-		shutdown-gpios = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_LOW>;
+		shutdown-gpios = <&gpio4 RK_PB2 GPIO_ACTIVE_LOW>;
 
 		vddio-supply = <&vcc_1v8>;
 		vdda-supply = <&vcc_camera>;
