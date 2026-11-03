@@ -170,6 +170,11 @@ jobs:
             echo "module gcc: $MG"
             [ "${MG%.*}" = "$KGCC" ] || { echo "!! 工具链 $MG 与内核 $KGCC 不一致"; exit 1; }
           fi
+          # 内核 worktree 里的宿主机工具（modpost 等）是 docker（glibc 2.38）编的，
+          # 宿主机 glibc 2.35 跑不了：GLIBC_2.38 not found。删掉用宿主 gcc 重编。
+          rm -f "$KSRC/scripts/mod/modpost"
+          make -C "$KSRC" -j"$(nproc)" scripts >/dev/null
+          test -x "$KSRC/scripts/mod/modpost" || { echo "modpost 重编失败"; exit 1; }
           make -C "$KSRC" M="$GITHUB_WORKSPACE/drivers/aic8800" -k \
                ARCH=arm64 CROSS_COMPILE="${CROSS%gcc}" \
                KCFLAGS="-Wno-error" -j"$(nproc)" modules
