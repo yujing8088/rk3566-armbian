@@ -844,6 +844,153 @@
 };
 
 /*
+ * ===========================================================================
+ * 音频：板载 PDM 麦克风阵列（录音）+ I2S1 -> CS4333 DAC -> 功放（放音）
+ *
+ * 厂商 Android dtb 的原始拓扑用的是 Rockchip BSP 专属的
+ * "rockchip,multi-dais" + "rockchip,dummy-codec"，这两个驱动**不在主线内核**
+ * （CONFIG_SND_SOC_ROCKCHIP_MULTI_DAIS / CONFIG_SND_SOC_DUMMY_CODEC 主线不存在）。
+ * 这里改用主线等价方案：两个独立的 simple-audio-card，codec 侧用上游
+ * linux,spdif-dit / spdif-dir 当虚拟 codec。
+ *
+ * 为什么 spdif 能顶替：
+ *   - CS4333 是无寄存器接口的纯 I2S DAC，只需要 BCLK/LRCK/MCLK + SDATA，
+ *     有没有寄存器控制无关紧要；
+ *   - PDM 麦克风阵列同理，只要 CPU 侧提供时钟并收 SDI 数据；
+ *   - 两者都不需要 codec 侧做事，虚拟 codec 即可满足 simple-audio-card。
+ * 依赖：CONFIG_SND_SOC_SPDIF（板上已有 snd-soc-spdif-tx/rx.ko），
+ *       CONFIG_SND_SOC_ROCKCHIP_I2S_TDM / _PDM / CONFIG_SND_SIMPLE_CARD 均已在镜像内，
+ *       所以本改动**只需替换 dtb，不必重编内核、不必重刷镜像**。
+ *
+ * 引脚（取自厂商 dtb）：
+ *   PDM  : clk1=GPIO1_A4, sdi1=GPIO1_B2, sdi2=GPIO1_B1, sdi3=GPIO1_B0 (func 3)
+ *          rockchip,path-map = <1 2 3 0> —— 3 麦阵列，物理走 sdi1/2/3
+ *   I2S1 : mclk=GPIO1_A2, sclktx=GPIO1_A3, lrcktx=GPIO1_A4? (见 pinctrl) , sdo0
+ *   功放使能 spk-ctl = GPIO1_A6（高有效，常开）
+ *
+ * 注意采样率：spdif 虚拟 codec 只接受 32k/44.1k/48k，测试请用 48000。
+ * ===========================================================================
+ */
+&pdm {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pdmm0_clk1 &pdmm0_sdi1 &pdmm0_sdi2 &pdmm0_sdi3>;
+	rockchip,path-map = <1 2 3 0>;
+};
+
+&i2s1_8ch {
+	status = "okay";
+	/*
+	 * 关键 1：把 I2S1 TX/RX 主时钟钉在 12.288 MHz（48k × 256）。
+	 *
+	 * 主线 rk356x-base.dtsi 只给 CLK_I2S1_8CH_TX_SRC 设了 1.188 GHz，
+	 * 而设备树里 mclk_tx 引用的是 MCLK_I2S1_8CH_TX 这个"门控"，
+	 * 该门控没有 CLK_SET_RATE_PARENT，所以 rockchip_i2s_tdm 在 hw_params
+	 * 里调 clk_set_rate(mclk, 12288000) 会被静默忽略 —— 实测主时钟一直
+	 * 停在 1 GHz，分频器按 12.288 MHz 算，实际 BCLK 快 80 多倍：
+	 * 10 秒的音频 61 ms 就冲完了，喇叭一声没有（PCM 却显示正常）。
+	 *
+	 * 解法：显式把分频链路选到 frac 分频器，并直接给它 12.288 MHz。
+	 */
+	assigned-clocks = <&cru CLK_I2S1_8CH_TX>, <&cru CLK_I2S1_8CH_RX>,
+			  <&cru I2S1_MCLKOUT_TX>;
+	assigned-clock-parents = <&cru CLK_I2S1_8CH_TX_FRAC>,
+				 <&cru CLK_I2S1_8CH_RX_FRAC>,
+				 <&cru CLK_I2S1_8CH_TX>;
+	assigned-clock-rates = <12288000>, <12288000>, <12288000>;
+	/*
+	 * 关键 2：TRCM 单向时钟模式会让 common_soc_init() 去写
+	 * RK3568_I2S1_MCLK_TX_OE（MCLK 引脚输出使能）。厂商 dtb 的
+	 * rockchip,clk-trcm = <1> 在主线对应 trcm-sync-tx-only。
+	 */
+	rockchip,trcm-sync-tx-only;
+	pinctrl-names = "default";
+	/* i2s1m0_mclk(PA2) 是送给 codec 的主时钟，厂商把它挂在 codec 节点上 */
+	pinctrl-0 = <&i2s1m0_sclktx &i2s1m0_lrcktx &i2s1m0_mclk
+		     &i2s1m0_sdi0 &i2s1m0_sdo0>;
+};
+
+/* 功放使能 GPIO1_A6，常开（否则 DAC 有输出但喇叭无声） */
+&gpio1 {
+	spk-ctl-hog {
+		gpio-hog;
+		gpios = <RK_PA6 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "spk-ctl";
+	};
+};
+
+/ {
+	spdif_dit: spdif-dit {
+		compatible = "linux,spdif-dit";
+		#sound-dai-cells = <0>;
+	};
+
+	spdif_dir: spdif-dir {
+		compatible = "linux,spdif-dir";
+		#sound-dai-cells = <0>;
+	};
+
+	i2s1_sound: i2s1-cs4333-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "rockchip,cs4333";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		/*
+		 * SoC 做主：MCLK/BCLK/LRCK 都由 RK3566 送出。
+		 * 依据是厂商 dtb —— cs4333-codec 节点自带 clocks="mclk" 与
+		 * assigned-clock-rates=12288000，且它的 pinctrl 引用了
+		 * i2s1m0-mclk(PA2)，说明这颗 codec 是被供主时钟的从机。
+		 */
+		simple-audio-card,bitclock-master = <&i2s1_master>;
+		simple-audio-card,frame-master = <&i2s1_master>;
+
+		i2s1_master: simple-audio-card,cpu {
+			sound-dai = <&i2s1_8ch>;
+		};
+
+		i2s1_codec: simple-audio-card,codec {
+			sound-dai = <&spdif_dit>;
+			/*
+			 * 关键 3：MCLK 门控必须有人 enable。
+			 *
+			 * I2S1_MCLKOUT_TX（PA2 引脚时钟源）在 clk-rk3568.c 里是一个
+			 * "deviceless gate"：没有任何驱动通过 clocks 属性引用它，
+			 * 所以 clk 框架永远不会 enable，引脚上就没有 12.288 MHz。
+			 * 板上这颗 8 脚 I2S DAC 靠 MCLK 做内部过采样，没有 MCLK 就
+			 * 完全静默（PCM 正常、TX FIFO 在动、功放偏置正常，就是没声）。
+			 *
+			 * 实测对照：手写寄存器关掉该门控 → 喇叭完全无声；
+			 *           打开 → 立刻出声。是唯一变量。
+			 *
+			 * 这里借用 simple-audio-card 的行为：
+			 * simple_util_parse_clk() 会解析子节点的 clocks，
+			 * simple_util_startup() 再调 clk_prepare_enable()，
+			 * 于是每次播放时门控自动打开、停止时自动关闭，无需改内核。
+			 */
+			clocks = <&cru I2S1_MCLKOUT_TX>;
+		};
+	};
+
+	pdm_mic: pdm-mic-array {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "rockchip,pdm-mic-array";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,bitclock-master = <&pdm_master>;
+		simple-audio-card,frame-master = <&pdm_master>;
+
+		pdm_master: simple-audio-card,cpu {
+			sound-dai = <&pdm>;
+		};
+
+		simple-audio-card,codec {
+			sound-dai = <&spdif_dir>;
+		};
+	};
+};
+
+/*
  * ---------------------------------------------------------------------------
  * 显示与触摸实现说明（2026-11 v3 固件）
  *
