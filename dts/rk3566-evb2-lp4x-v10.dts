@@ -562,7 +562,9 @@
 	status = "okay";
 };
 
-/* 蓝牙串口（AIC8800 BT 走 UART1，硬件流控） */
+/* 蓝牙串口（RK960 BT 走 UART1 = /dev/ttyS1，硬件流控；
+ * 用户态 rk_hciattach -n -s 115200 /dev/ttyS1 rockchip 3000000 flow nosleep 加载固件，
+ * 由 CI 注入镜像的 rk960-bt.service 拉起） */
 &uart1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart1m0_xfer &uart1m0_ctsn &uart1m0_rtsn>;

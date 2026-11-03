@@ -134,7 +134,7 @@ jobs:
             USE_LOCAL_APT_DEB_CACHE=no \
             SHARE_LOG=no
 
-      - name: 编译 AIC8800 无线/蓝牙驱动（在 Armbian 构建容器内，环境与内核完全一致）
+      - name: 编译 AIC8800 + RK960 无线/蓝牙驱动（在 Armbian 构建容器内，环境与内核完全一致）
         working-directory: build
         run: |
           set -e
@@ -160,16 +160,43 @@ jobs:
               make M=/src/drivers/aic8800 ARCH=arm64 \
                    CROSS_COMPILE=aarch64-linux-gnu- \
                    KCFLAGS="-Wno-error" -k -j"$(nproc)" modules
+              # ---- RK960 WiFi 驱动（首次编译，失败不阻断镜像产出，只发 warning）----
+              if make M=/src/drivers/rk960 ARCH=arm64 \
+                   CROSS_COMPILE=aarch64-linux-gnu- \
+                   KCFLAGS="-Wno-error" -k -j"$(nproc)" modules; then
+                echo "RK960_BUILD=ok" >> /src/rk960-build.status
+              else
+                echo "RK960_BUILD=failed" >> /src/rk960-build.status
+                echo "::warning::rk960 驱动编译失败，查看上方日志（6.18 API 兼容问题需逐个修）"
+              fi
+              # ---- rk_hciattach 用户态 BT 加载工具 ----
+              mkdir -p /src/out-bt
+              if aarch64-linux-gnu-gcc -O2 -Wall -I/src/tools/rk-hciattach \
+                   -DFIRMWARE_DIR=\""/lib/firmware/"\" \
+                   -o /src/out-bt/rk_hciattach \
+                   /src/tools/rk-hciattach/hciattach.c /src/tools/rk-hciattach/hciattach_rk.c 2>/src/out-bt/build.log; then
+                echo "HCIATTACH_BUILD=ok" >> /src/rk960-build.status
+              else
+                echo "HCIATTACH_BUILD=failed" >> /src/rk960-build.status
+                echo "::warning::rk_hciattach 编译失败"; tail -20 /src/out-bt/build.log || true
+              fi
             '
+          cat "$GITHUB_WORKSPACE"/rk960-build.status 2>/dev/null || true
           ls -l "$GITHUB_WORKSPACE"/drivers/aic8800/*/*.ko
           modinfo -F vermagic "$GITHUB_WORKSPACE"/drivers/aic8800/aic8800_bsp/aic8800_bsp.ko
+          ls -l "$GITHUB_WORKSPACE"/drivers/rk960/*.ko 2>/dev/null || echo "rk960.ko 未产出（见 warning）"
+          file "$GITHUB_WORKSPACE"/out-bt/rk_hciattach 2>/dev/null || true
 
       - name: 上传驱动模块（失败也能单独装到板上）
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: aic8800-modules
-          path: drivers/aic8800/*/*.ko
+          path: |
+            drivers/aic8800/*/*.ko
+            drivers/rk960/*.ko
+            out-bt/*
+            rk960-build.status
           if-no-files-found: ignore
           retention-days: 30
           compression-level: 6
@@ -199,6 +226,43 @@ jobs:
           sudo mkdir -p /mnt/r/etc/modprobe.d
           printf 'options aic8800_bsp aic_fw_path=/lib/firmware/aic8800/SDIO/aic8800D80\n' \
             | sudo tee /mnt/r/etc/modprobe.d/aic8800.conf
+          # ---- RK960 WiFi/BT 注入（编译成功才有 .ko；失败不阻断镜像）----
+          if [ -f drivers/rk960/rk960.ko ]; then
+            sudo cp drivers/rk960/rk960.ko "/mnt/r/lib/modules/$KVER/extra/"
+            sudo depmod -b /mnt/r "$KVER"
+            grep -q rk960 "/mnt/r/lib/modules/$KVER/modules.dep" && echo "✅ modules.dep 已含 rk960"
+            # 驱动用 filp_open 直读 /lib/firmware/rk960_wifi*.bin（fw_path 内置含 /lib/firmware）
+            sudo cp firmware/rk960/rk960_wifi*.bin /mnt/r/lib/firmware/
+            sudo cp firmware/rk960/rk960_bt*.bin   /mnt/r/lib/firmware/
+            # 厂商 init 脚本以 fw_no_sleep=1 加载
+            printf 'options rk960 fw_no_sleep=1\n' | sudo tee /mnt/r/etc/modprobe.d/rk960.conf
+            echo rk960 | sudo tee /mnt/r/etc/modules-load.d/rk960.conf
+          else
+            echo "!! rk960.ko 未产出，镜像不含 WiFi 驱动（本轮仅交付相机+按键）"
+          fi
+          if [ -f out-bt/rk_hciattach ] && file out-bt/rk_hciattach | grep -q ARM; then
+            sudo cp out-bt/rk_hciattach /mnt/r/usr/local/bin/
+            sudo chmod 755 /mnt/r/usr/local/bin/rk_hciattach
+            # uart1 = ttyS1（serial1 别名），115200 初始波特率，3000000 加载后速率
+            printf '%s\n' \
+              '[Unit]' \
+              'Description=RK960 Bluetooth firmware loader (rk_hciattach)' \
+              'After=multi-user.target' \
+              '[Service]' \
+              'Type=forking' \
+              'ExecStart=/usr/local/bin/rk_hciattach -n -s 115200 /dev/ttyS1 rockchip 3000000 flow nosleep 11:22:33:44:55:66' \
+              'Restart=on-failure' \
+              'RestartSec=3' \
+              '[Install]' \
+              'WantedBy=multi-user.target' \
+              | sudo tee /mnt/r/etc/systemd/system/rk960-bt.service > /dev/null
+            sudo mkdir -p /mnt/r/etc/systemd/system/multi-user.target.wants
+            sudo ln -sf /etc/systemd/system/rk960-bt.service \
+              /mnt/r/etc/systemd/system/multi-user.target.wants/rk960-bt.service
+            echo "✅ rk_hciattach + rk960-bt.service 已注入"
+          else
+            echo "!! rk_hciattach 未产出，镜像不含 BT 用户态工具"
+          fi
           sudo sync
           sudo umount /mnt/r
           sudo losetup -d "$LOOP"
@@ -228,6 +292,14 @@ jobs:
           else
             echo "⚠️ 未在 deb 中确认补丁字符串，请核对构建日志里 1000-input-silead 补丁是否应用"
           fi
+          # RK960 注入验证（编译失败时镜像可能不含，仅提示）
+          for pat in "rk960_wifi.bin" "rk960_bt_loader.bin" "rk960-bt.service"; do
+            if grep -qaF "$pat" "$IMG"; then
+              echo "✅ RK960: $pat 已在镜像中"
+            else
+              echo "⚠️ RK960: $pat 不在镜像中（驱动/工具编译失败时属预期）"
+            fi
+          done
 
       - name: 结果信息
         if: always()
