@@ -60,7 +60,9 @@ void __init rk960_sdio_set_platform_data(struct rk960_platform_data_sdio
 MODULE_AUTHOR("Rockchips");
 MODULE_DESCRIPTION("Rockchips RK960 Wireless Lan Driver");
 MODULE_LICENSE("GPL");
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 #endif
 

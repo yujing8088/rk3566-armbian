@@ -1198,7 +1198,11 @@ err:
 
 void rk960_core_release(struct rk960_common *self)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0))
+	rk960_stop(self->hw, false);
+#else
 	rk960_stop(self->hw);
+#endif
 
 	rk960_free_firmware_buf(&self->firmware);
 

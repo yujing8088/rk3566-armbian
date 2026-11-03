@@ -14,7 +14,11 @@
 /* mac80211 API								*/
 
 int rk960_start(struct ieee80211_hw *dev);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0))
+void rk960_stop(struct ieee80211_hw *dev, bool suspend);
+#else
 void rk960_stop(struct ieee80211_hw *dev);
+#endif
 int rk960_add_interface(struct ieee80211_hw *dev, struct ieee80211_vif *vif);
 void rk960_remove_interface(struct ieee80211_hw *dev,
 			    struct ieee80211_vif *vif);
@@ -22,7 +26,11 @@ int rk960_change_interface(struct ieee80211_hw *dev,
 			   struct ieee80211_vif *vif,
 			   enum nl80211_iftype new_type, bool p2p);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+int rk960_config(struct ieee80211_hw *dev, int link_id, u32 changed);
+#else
 int rk960_config(struct ieee80211_hw *dev, u32 changed);
+#endif
 int rk960_change_interface(struct ieee80211_hw *dev,
 			   struct ieee80211_vif *vif,
 			   enum nl80211_iftype new_type, bool p2p);
@@ -51,7 +59,9 @@ int rk960_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 		  struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 		  struct ieee80211_key_conf *key);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+int rk960_set_rts_threshold(struct ieee80211_hw *hw, int link_id, u32 value);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
 int rk960_set_rts_threshold(struct ieee80211_hw *hw, u32 value);
 #else
 int rk960_set_rts_threshold(struct ieee80211_hw *hw,

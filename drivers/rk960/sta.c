@@ -172,8 +172,15 @@ out:
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0))
+void rk960_stop(struct ieee80211_hw *dev, bool suspend)
+#else
 void rk960_stop(struct ieee80211_hw *dev)
+#endif
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0))
+	(void)suspend;
+#endif
 	struct rk960_common *hw_priv = dev->priv;
 	struct rk960_vif *priv = NULL;
 	LIST_HEAD(list);
@@ -515,8 +522,15 @@ int rk960_change_interface(struct ieee80211_hw *dev,
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+int rk960_config(struct ieee80211_hw *dev, int link_id, u32 changed)
+#else
 int rk960_config(struct ieee80211_hw *dev, u32 changed)
+#endif
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+	(void)link_id;
+#endif
 	int ret = 0;
 	struct rk960_common *hw_priv = dev->priv;
 	struct ieee80211_conf *conf = &dev->conf;
@@ -1509,8 +1523,15 @@ static void rk960_set_rts_threshold_iter(void *data, u8 * mac,
 	return;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+int rk960_set_rts_threshold(struct ieee80211_hw *hw, int link_id, u32 value)
+#else
 int rk960_set_rts_threshold(struct ieee80211_hw *hw, u32 value)
+#endif
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+	(void)link_id;
+#endif
 	u32 value_t = value;
 
 	RK960_DEBUG_STA("%s: %x\n", __func__, value);
