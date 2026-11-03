@@ -48,7 +48,7 @@ compatible = "rockchip,rk3566-evb2-lp4x-v10", "rockchip,rk3566"
 | 以太网 | `gmac1` **RMII 100M**，PHY addr 0，reset=GPIO4_C2，25/50M 由 PHY 供给 | ✅ |
 | WiFi | **RK960**（瑞芯微自研 WiFi+BT），SDIO 4bit，`WL_REG_ON`=GPIO2_B1，32K=GPIO2_C6 | ❌ SDIO ID `0296:5349`(GCT)，不是 AIC8800；驱动私有、无公开源码，需厂家 `rk960.ko` 或改用 USB 网卡 |
 | 蓝牙 | RK960 BT（UART1 + 硬件流控，reset=GPIO2_D7，wake=GPIO2_D1 / host_wake=GPIO2_D0） | ❌ 同属 RK960 私有栈；另 `aic8800_btlpm` 是 allwinner 专用，主线 `hci_uart` 也不发私有 HCI 下载命令 |
-| USB | 丝印 **USB2.0 口**=`fcc00000`(dwc3, OTG 硬件)、**USB3.0 口**=`fd000000`(xHCI)、**HOST2/HOST3**=4pin 排针（`fd800000`/`fd880000` EHCI+OHCI）；VBUS 开关 `vcc5v0_host`=GPIO0_A6、`vcc5v0_otg`=GPIO0_C6 | ✅ **USB2.0 口已实测可用**：`&usb_host0_xhci` 强制 `dr_mode="host"` 后 Logitech 接收器(046d:c53f)正常枚举，键鼠事件正常。⚠️ USB3.0 口 VBUS 实测 0V（硬件断，两路 5V 均正常使能）；HOST2/HOST3 未测（4pin 排针无转接线） |
+| USB | 丝印 **USB2.0 口**=`fcc00000`(dwc3, OTG 硬件)、**USB3.0 口**=`fd000000`(xHCI)、**HOST2/HOST3**=4pin 排针（`fd800000`/`fd880000` EHCI+OHCI）；VBUS 开关 `vcc5v0_host`=GPIO0_A6、`vcc5v0_otg`=GPIO0_C6 | ✅ **USB2.0 口已实测可用**：`&usb_host0_xhci` 强制 `dr_mode="host"` 后 Logitech 接收器(046d:c53f)正常枚举，键鼠事件正常。⚠️ USB3.0 口 VBUS 与 HOST2/HOST3 排针 1 脚实测均 **0V**（`vcc5v0_host` 整条支路硬件断，双极性均已排除软件原因） |
 | 显示 | MIPI-DSI0 800×1280@70MHz 4lane，背光 PWM5，enable=GPIO0_C7，reset=GPIO0_D5 | ✅ 已点亮出字 |
 | 触摸 | GSLX680（I2C1 0x40，中断 GPIO0_B5，复位 GPIO0_B6 高有效） | ✅ 已跑通 |
 | RTC | HYM8563（I2C1 0x51） | ✅ |
@@ -206,7 +206,7 @@ armbian-resize-filesystem
 | WiFi（RK960 SDIO） | ❌ 无解（缺源码） | SDIO ID `0296:5349`(GCT)，非 AIC8800。厂商 vendor 分区只有预编译 `rk960.ko` + `rk960_wifi*.bin`，无公开源码；`drivers/aic8800` 保留但与本板芯片不匹配，`aicbsp_platform_power_on` 必然失败。可行替代：USB WiFi 网卡（USB2.0 口已实测可用）|
 | 蓝牙（RK960 UART） | ❌ 无解（缺 HCI 下载流程） | `&uart1` 已 okay（ttyS1，硬件流控）；RK960 需私有 HCI 固件下载，主线 `hci_uart` 不支持 |
 | USB 主机 | ✅ USB2.0 口可用 | 板上「USB2.0」口是 `fcc00000` OTG 硬件，主线默认 otg+extcon → 实测 `USB-HOST=0` 一直停在 peripheral，插任何 device 都无反应。改 `&usb_host0_xhci { dr_mode = "host"; }` 后 Logitech 接收器正常枚举（`hid-generic` 注册 Keyboard/Mouse/Consumer Control，`/dev/input/event1..4`）。已有镜像可免刷机热修：`/boot/overlay-user/usb2-host.dtbo` + `armbianEnv.txt` 加 `user_overlays=usb2-host`（overlay 失败时 boot.cmd 会自动回滚原 DT，不变砖）|
-| USB3.0 口 VBUS | ⚠️ 硬件问题 | 该口实测 0V；两路 5V 开关（GPIO0_A6 / GPIO0_C6）在内核里均 `out hi` + `enabled`，厂商 dtb 全板也只有这两路 → 属板上该支路器件/走线问题，软件无法补救 |
+| USB3.0 口 / HOST2 / HOST3 供电 | ⚠️ 硬件问题（已闭环） | `vcc5v0_host`(GPIO0_A6) 整条支路无输出：**USB3.0 口 VBUS、HOST2/HOST3 排针 1 脚实测均 0V**。① 内核里 `vcc5v0_host` = `enabled`/4 users，GPIO0_A6 pad 实测高；② 直接改 GPIO 寄存器把 A6 拉低（`tools/gpio0a6.py`，DR/EXT 均读到 0）后仍 0V → **两种极性都不出电**，排除 `enable-active-high` 写反；③ 同款电路 `vcc5v0_otg`(GPIO0_C6) 能正常出 5V，说明输入 `vcc5v0_sys` 与设计本身没问题；④ 全板只有 5 颗原生 gpiochip + RK809/`1-0051`，无 I2C 扩展 IO，厂商 dtb 也无第三路使能 → 定论：该路负载开关器件或输出走线断。**已验证可行替代**：HOST2/HOST3 为 4pin 排针（VCC/D-/D+/GND），外部灌 5V 即可当主机口用（`fd800000`/`fd880000` 的 EHCI+OHCI 驱动均已正常注册） |
 | 触摸 GSLX680 | ✅ 已完成 | 主线 `silead.c` + 内核补丁 `userpatches/kernel/archive/rockchip64-6.18/1000-input-silead-support-gslx680-download-protocol.patch`；固件用 `gslx680_fw.fw`（5247 条） |
 | 摄像头（HI846 等） | 未启用 | 需要 ISP/媒体管线配置，非本次目标 |
 | 以太网 100M 上限 | 硬件限制 | 板上是 RMII PHY，物理上就是百兆；要千兆得换 RGMII PHY 的板子 |
