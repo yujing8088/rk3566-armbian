@@ -233,7 +233,15 @@
 	vcc5v0_usb_host: vcc5v0-usb-host {
 		compatible = "regulator-fixed";
 		enable-active-high;
-		gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+		/*
+		 * OEM 改版把 USB HOST 5V 主开关的使能脚从 EVB 默认的 GPIO0_A6
+		 * 换到了 GPIO3_A2（实测定位）。A2 是上游主开关：
+		 *   - 直接给 HOST2/HOST3 供电
+		 *   - 给 USB3.0 口自己的负载开关(GPIO3_A1)提供输入
+		 * 所以 USB3.0 口出 5V 需要 A1+A2 同时高（A1 见 &gpio3 的 usb3-vbus-hog）。
+		 * 厂商 Android dtb 写的 GPIO0_A6 在本板上悬空，是错的。
+		 */
+		gpio = <&gpio3 RK_PA2 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&vcc5v0_usb_host_en>;
 		regulator-name = "vcc5v0_usb_host";
@@ -378,6 +386,19 @@
 	};
 };
 
+/* USB3.0 口有自己单独的 VBUS 负载开关，使能脚是 GPIO3_A1（实测定位）。
+ * 它的输入来自 vcc5v0_usb_host(A2) 那条上游支路，所以 USB3.0 口要出 5V
+ * 必须 A1+A2 同时高。HOST2/HOST3 只挂在 A2 上，不需要 A1。
+ * 这里用 gpio-hog 把 A1 常拉高（host 口 VBUS 本就常供电）。 */
+&gpio3 {
+	usb3-vbus-hog {
+		gpio-hog;
+		gpios = <RK_PA1 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "vcc5v0-usb3-host";
+	};
+};
+
 &pinctrl {
 	eth {
 		power_key_pin: power-key-pin {
@@ -416,7 +437,7 @@
 
 	usb {
 		vcc5v0_usb_host_en: vcc5v0-usb-host-en {
-			rockchip,pins = <0 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
+			rockchip,pins = <3 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
 		vcc5v0_usb2_otg_en: vcc5v0-usb2-otg-en {
