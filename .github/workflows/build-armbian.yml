@@ -172,9 +172,12 @@ jobs:
           fi
           # 内核 worktree 里的宿主机工具（modpost 等）是 docker（glibc 2.38）编的，
           # 宿主机 glibc 2.35 跑不了：GLIBC_2.38 not found。删掉用宿主 gcc 重编。
-          rm -f "$KSRC/scripts/mod/modpost"
-          make -C "$KSRC" -j"$(nproc)" scripts >/dev/null
+          # worktree 由 docker 内 root 创建，scripts/mod 目录宿主用户不可写 → sudo。
+          sudo rm -f "$KSRC/scripts/mod/modpost" "$KSRC/scripts/mod/elfcore.h" 2>/dev/null || true
+          sudo make -C "$KSRC" -j"$(nproc)" scripts >/dev/null
+          sudo chmod -R a+rwX "$KSRC/scripts/mod"
           test -x "$KSRC/scripts/mod/modpost" || { echo "modpost 重编失败"; exit 1; }
+          "$KSRC/scripts/mod/modpost" --help >/dev/null 2>&1 || true
           make -C "$KSRC" M="$GITHUB_WORKSPACE/drivers/aic8800" -k \
                ARCH=arm64 CROSS_COMPILE="${CROSS%gcc}" \
                KCFLAGS="-Wno-error" -j"$(nproc)" modules
