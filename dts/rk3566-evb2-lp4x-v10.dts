@@ -920,6 +920,35 @@
 	};
 };
 
+/*
+ * ============ 摄像头（Hynix HI-846，MIPI CSI2 4-lane）============
+ *
+ * 第 1 步：只打开 I2C 总线与摄像头供电，先确认传感器在总线上应答，
+ * 拿到真实的 I2C 地址（厂商 dtb 写 0x22，模块文档常写 0x20）。
+ *
+ * 引脚依据厂商 dtb：
+ *   i2c@fe5b0000 pinctrl-0 -> i2c2m1-xfer（GPIO4_B5=SCL / GPIO4_B4=SDA）
+ *   vcc-camera-regulator   -> GPIO0_C5 高有效（摄像头供电开关）
+ *   hi846 reset-gpios      -> GPIO3_C5(pin29)，pwdn-gpios -> GPIO4_B2(pin10)
+ */
+&i2c2 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2m1_xfer>;
+	clock-frequency = <100000>;
+};
+
+/ {
+	vcc_camera: vcc-camera-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_camera";
+		gpio = <&gpio0 RK_PC5 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+};
+
 / {
 	spdif_dit: spdif-dit {
 		compatible = "linux,spdif-dit";
