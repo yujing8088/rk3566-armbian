@@ -1,4 +1,4 @@
-CFLAGS := -Wall -g
+CFLAGS := -Wall -g -D_GNU_SOURCE
 #CC := $(CROSS_COMPLE)gcc
 all: rk_hciattach
 OBJS := hciattach.o hciattach_rk.o

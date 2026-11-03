@@ -24,6 +24,11 @@ ifeq ($(CONFIG_RK960_ITP),y)
 OBJS += itp.o
 endif
 
+# BSP helper stubs + local <linux/rfkill-wlan.h> shim + 6.x API compat
+OBJS += rk_stub_rockchip.o
+ccflags-y += -I$(src)/include
+ccflags-y += -include $(src)/rk960_compat.h
+
 #EXTRA_CFLAGS += -DROAM_OFFLOAD
 ccflags-y += -DHW_RESET
 #EXTRA_CFLAGS += -DP2P_MULTIVIF
