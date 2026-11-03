@@ -936,7 +936,56 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c2m1_xfer>;
 	clock-frequency = <100000>;
+
+	/*
+	 * HI-846 摄像头（单前置，MIPI CSI2 4-lane）
+	 *
+	 * 驱动 drivers/media/i2c/hi846.c 的要求：
+	 *   clocks(xvclk) / reset-gpios / shutdown-gpios
+	 *   vddio(1.8V) / vdda(2.8V) / vddd(1.2V) 三路 regulator
+	 *   endpoint: data-lanes + link-frequencies（80M、200M 两种模式都要列）
+	 *
+	 * 引脚依据厂商 dtb：
+	 *   reset   = GPIO3_D5 (pin29)
+	 *   shutdown= GPIO4_B2 (pin10)   （厂商里叫 pwdn-gpios）
+	 *   xvclk   = CLK_CIF_OUT，引脚 cif_clkout = GPIO4_C0 mux1
+	 *   供电开关 = GPIO0_C5 -> vcc_camera
+	 *
+	 * 说明：模块的 1.2V 内核电压由模组内部 LDO 产生，vddd 这里指向
+	 * vcc_1v8 仅作 regulator 框架的占位，不改变实际供电。
+	 */
+	hi846: camera@22 {
+		compatible = "hynix,hi846";
+		reg = <0x22>;
+		status = "okay";
+
+		clocks = <&cru CLK_CIF_OUT>;
+		clock-names = "xvclk";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cif_clk>;
+
+		reset-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+		shutdown-gpios = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+
+		vddio-supply = <&vcc_1v8>;
+		vdda-supply = <&vcc_camera>;
+		vddd-supply = <&vcc_1v8>;
+
+		port {
+			hi846_out: endpoint {
+				data-lanes = <1 2 3 4>;
+				link-frequencies = /bits/ 64 <80000000 200000000>;
+			};
+		};
+	};
 };
+
+/*
+ * 排查记录（2026-11-03）：曾临时打开 i2c3/i2c4/i2c5 全总线扫描，
+ * i2c3 上一度出现 0x20/0x22 的 "ACK"，但随后连不存在的 0x21 也超时，
+ * 判定为总线卡死时的误判（i2c3 无实际设备）。故只保留 i2c2。
+ */
 
 / {
 	vcc_camera: vcc-camera-regulator {
