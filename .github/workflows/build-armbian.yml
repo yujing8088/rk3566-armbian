@@ -203,6 +203,9 @@ jobs:
           sudo umount /mnt/r
           sudo losetup -d "$LOOP"
           echo "注入完成"
+          # 注入改动了镜像内容，Armbian 产出的 .sha 已失效 → 重算
+          cd output/images && IMG=$(ls -1 *.img | head -1) && sha256sum -b "$IMG" | awk '{print $1"  "$2}' > "${IMG}.sha"
+          echo "重算 sha256:"; cat "${IMG}.sha"
 
       - name: 验证镜像内容（面板 DTB + panel-simple-dsi.ko + 触摸固件）
         working-directory: build
