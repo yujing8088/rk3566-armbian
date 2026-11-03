@@ -35,6 +35,8 @@ echo "==> syncing userpatches"
 mkdir -p "${BUILD_DIR}/userpatches"
 cp -rv "${HERE}/userpatches/config" "${BUILD_DIR}/userpatches/"
 cp -rv "${HERE}/userpatches/dtb"    "${BUILD_DIR}/userpatches/"
+[[ -d "${HERE}/userpatches/kernel" ]]   && cp -rv "${HERE}/userpatches/kernel"   "${BUILD_DIR}/userpatches/"
+[[ -d "${HERE}/userpatches/firmware" ]] && cp -rv "${HERE}/userpatches/firmware" "${BUILD_DIR}/userpatches/"
 [[ -d "${HERE}/userpatches/patch" ]] && cp -rv "${HERE}/userpatches/patch" "${BUILD_DIR}/userpatches/"
 
 # 3) 校验 dtb 存在

@@ -22,6 +22,7 @@
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/soc/rockchip,vop2.h>
 #include <dt-bindings/power/rk3568-power.h>
+#include <dt-bindings/media/video-interfaces.h>
 #include "rk3566.dtsi"
 
 / {
@@ -985,6 +986,17 @@
 
 		clocks = <&cru CLK_CIF_OUT>;
 		clock-names = "xvclk";
+		/*
+		 * xvclk 显式钉在 24MHz（板卡设计值，厂商方案同为 24MHz）。
+		 * 主线 hi846.c 的寄存器表按 25MHz 校准，会打一条
+		 * "External clock freq should be 25000000" 的 warning——
+		 * 只 warn 不失败。CLK_CIF_OUT 的父时钟是 gpll/usb480m/xin24m，
+		 * 1.188GHz 无法整数分频出精确 25MHz（1188/47=25.28MHz），
+		 * 所以按硬件设计用 24MHz：MIPI 实际链路速率比上报值低 4%，
+		 * D-PHY settle 参数有 ±10% 以上的容差，实测出流为准。
+		 */
+		assigned-clocks = <&cru CLK_CIF_OUT>;
+		assigned-clock-rates = <24000000>;
 
 		power-domains = <&power RK3568_PD_VI>;
 
@@ -1002,6 +1014,86 @@
 			hi846_out: endpoint {
 				data-lanes = <1 2 3 4>;
 				link-frequencies = /bits/ 64 <80000000 200000000>;
+				remote-endpoint = <&csi_in>;
+			};
+		};
+	};
+};
+
+/*
+ * ============ MIPI CSI-2 采集链路（sensor -> DPHY -> CSI2 RX -> VICAP）============
+ *
+ * 硬件拓扑（rk3568/66 TRM + 厂商 dtb 交叉验证）：
+ *   hi846 --MIPI CSI2 4-lane--> csi_dphy(fe870000, 模拟 D-PHY)
+ *        -> rkcsi(fdfb0000, MIPI CSI-2 接收器/协议层)
+ *        -> vicap(fdfe0000, 像素 DMA/ping-pong 写内存)
+ *
+ * 驱动状态（内核 6.18）：
+ *   - csi_dphy: phy-rockchip-inno-csidphy.ko 已有（CONFIG_PHY_ROCKCHIP_INNO_CSIDPHY=m）
+ *   - rkcsi / vicap: 上游 v6.19 才有，通过 userpatches 1001 回移补丁进入 6.18
+ *     （CONFIG_VIDEO_ROCKCHIP_CSI=m / CONFIG_VIDEO_ROCKCHIP_CIF=m）
+ *   - 全链路都在 VI 电源域（RK3568_PD_VI）内，各节点声明 power-domains 后
+ *     probe 时 genpd 自动上电（音频/摄像头 VI 域问题的同一根源）
+ */
+&csi_dphy {
+	status = "okay";
+};
+
+&vicap {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@1 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			vicap_mipi_input: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&csi_out>;
+			};
+		};
+	};
+};
+
+&vicap_mmu {
+	status = "okay";
+};
+
+/* 根下直接挂（与 vicap/vepu 同级，厂商 dtb 同样把 mipi-csi2 放在根下） */
+/ {
+	csi2: csi@fdfb0000 {
+		compatible = "rockchip,rk3568-mipi-csi";
+		reg = <0x0 0xfdfb0000 0x0 0x10000>;
+		clocks = <&cru PCLK_CSI2HOST1>;
+		resets = <&cru SRST_P_CSI2HOST1>;
+		phys = <&csi_dphy>;
+		power-domains = <&power RK3568_PD_VI>;
+		status = "okay";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+
+				csi_in: endpoint {
+					/* MEDIA_BUS_TYPE_CSI2_DPHY = 4（video-interfaces.h） */
+					bus-type = <4>;
+					data-lanes = <1 2 3 4>;
+					remote-endpoint = <&hi846_out>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+
+				csi_out: endpoint {
+					remote-endpoint = <&vicap_mipi_input>;
+				};
 			};
 		};
 	};
