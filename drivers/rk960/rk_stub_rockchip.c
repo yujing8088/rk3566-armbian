@@ -12,8 +12,14 @@
  * described by the "wlan-platdata" node in the board DTS).  In-band SDIO
  * interrupts are never asserted by this firmware: with irq = 0 the driver
  * times out with "Timeout waiting on device startup" while the OOB line sits
- * high.  So look the line up through the gpiod consumer API and return the
- * mapped IRQ here.
+ * high.  So look the line up and return the mapped IRQ here.
+ *
+ * The vendor tree reads the line with the BSP-only
+ * of_get_named_gpio(node, "WIFI,host_wake_irq", 0), which uses the property
+ * name verbatim.  The gpiod consumer API instead derives the property name
+ * from the connection id ("<con_id>-gpios" / "<con_id>-gpio"), so the board
+ * DTS carries a "WIFI,host_wake_irq-gpios" alias next to the vendor literal.
+ * Both are tried here.
  *
  * MAC provisioning comes from the chip efuse inside the firmware, with a
  * random address as final fallback, so rockchip_wifi_mac_addr() reports
@@ -22,6 +28,8 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
 #include <linux/gpio/consumer.h>
 
 /* Kept for the lifetime of the module: the IRQ stays usable after
@@ -40,31 +48,49 @@ int rockchip_wifi_set_carddetect(int val)
 }
 EXPORT_SYMBOL_GPL(rockchip_wifi_set_carddetect);
 
-int rockchip_wifi_get_oob_irq(void)
+static int rk960_oob_irq_lookup(void)
 {
 	struct device_node *np;
-	int irq;
+	struct gpio_desc *desc;
+	int irq = 0;
+	int gpio;
 
 	np = of_find_compatible_node(NULL, NULL, "wlan-platdata");
 	if (!np)
 		return 0;
 
-	rk960_oob_gpiod = fwnode_gpiod_get_index(of_fwnode_handle(np),
-						 "WIFI,host_wake_irq", 0,
-						 GPIOD_IN, "rk960-oob");
-	of_node_put(np);
-	if (IS_ERR(rk960_oob_gpiod)) {
-		int err = PTR_ERR(rk960_oob_gpiod);
+	desc = fwnode_gpiod_get_index(of_fwnode_handle(np),
+				      "WIFI,host_wake_irq", 0,
+				      GPIOD_IN, "rk960-oob");
+	if (!IS_ERR(desc)) {
+		rk960_oob_gpiod = desc;
+		irq = gpiod_to_irq(desc);
+	} else {
+		/* Fall back to the vendor literal property name, which the
+		 * gpiod name mangling above can never reach. */
+		gpio = of_get_named_gpio(np, "WIFI,host_wake_irq", 0);
+		if (gpio >= 0)
+			irq = gpio_to_irq(gpio);
+		else
+			irq = gpio;
+	}
 
-		rk960_oob_gpiod = NULL;
-		pr_info("rk960 stub: no usable WIFI,host_wake_irq gpio (%d)\n",
-			err);
+	of_node_put(np);
+
+	if (irq <= 0) {
+		pr_err("rk960: OOB host-wake line unusable (%d), falling back to in-band SDIO irq\n",
+		       irq);
 		return 0;
 	}
 
-	irq = gpiod_to_irq(rk960_oob_gpiod);
-	pr_info("rk960 stub: oob host-wake irq %d\n", irq);
-	return irq > 0 ? irq : 0;
+	pr_info("rk960: OOB host-wake irq %d (%s)\n", irq,
+		rk960_oob_gpiod ? "gpiod" : "legacy gpio");
+	return irq;
+}
+
+int rockchip_wifi_get_oob_irq(void)
+{
+	return rk960_oob_irq_lookup();
 }
 EXPORT_SYMBOL_GPL(rockchip_wifi_get_oob_irq);
 

@@ -184,6 +184,10 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_host_wake_h>;
 		WIFI,host_wake_irq = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>;
+		/* Same line under the name the gpiod consumer API derives
+		 * from its con_id ("<con_id>-gpios"); the vendor literal above
+		 * is only reachable through the legacy of_get_named_gpio(). */
+		WIFI,host_wake_irq-gpios = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
 
