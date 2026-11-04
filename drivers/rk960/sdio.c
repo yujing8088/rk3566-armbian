@@ -838,6 +838,7 @@ static void __exit rk960_sdio_exit(void)
 	pdata = global_plat_data;
 	sdio_unregister_driver(&sdio_driver);
 	rk960_sdio_off(pdata);
+	rk_stub_rockchip_release();
 }
 
 module_init(rk960_sdio_init);

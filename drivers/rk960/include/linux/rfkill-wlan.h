@@ -21,4 +21,8 @@ int rockchip_wifi_get_oob_irq(void);
  * nonzero = not available, driver falls back to efuse / random addr). */
 int rockchip_wifi_mac_addr(unsigned char *buf);
 
+/* Drop the OOB host-wake GPIO descriptor again (called from module exit;
+ * the stub cannot use module_exit() itself, sdio.c owns that). */
+void rk_stub_rockchip_release(void);
+
 #endif /* _RFKILL_WLAN_SHIM_H */

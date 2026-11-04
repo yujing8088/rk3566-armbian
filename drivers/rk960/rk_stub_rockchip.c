@@ -31,6 +31,7 @@
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
 #include <linux/gpio/consumer.h>
+#include <linux/rfkill-wlan.h>
 
 /* Kept for the lifetime of the module: the IRQ stays usable after
  * request_threaded_irq() as long as the underlying GPIO is requested. */
@@ -100,10 +101,14 @@ int rockchip_wifi_mac_addr(unsigned char *buf)
 }
 EXPORT_SYMBOL_GPL(rockchip_wifi_mac_addr);
 
-static void __exit rk_stub_exit(void)
+/* Called from rk960_sdio_exit().  This file must not declare module_exit()
+ * itself: the module's init/exit live in sdio.c and a second cleanup_module
+ * makes the link fail with "multiple definition of cleanup_module". */
+void rk_stub_rockchip_release(void)
 {
 	gpiod_put(rk960_oob_gpiod);
+	rk960_oob_gpiod = NULL;
 }
-module_exit(rk_stub_exit);
+EXPORT_SYMBOL_GPL(rk_stub_rockchip_release);
 
 MODULE_LICENSE("GPL");
