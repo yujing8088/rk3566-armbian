@@ -255,6 +255,13 @@ static const struct ieee80211_ops rk960_ops = {
 	/* mandatory since 6.18 (mac80211 main.c alloc WARN_ON); same helper
 	 * mainline cw1200 uses for legacy queue-managing drivers */
 	.wake_tx_queue = ieee80211_handle_wake_tx_queue,
+	/* 6.18 also requires all-or-none chanctx ops: either implement all five
+	 * or point the three core ones at the emulated defaults (cw1200 does
+	 * exactly this - mac80211 then emulates chanctx and calls .config) */
+	.add_chanctx = ieee80211_emulate_add_chanctx,
+	.remove_chanctx = ieee80211_emulate_remove_chanctx,
+	.change_chanctx = ieee80211_emulate_change_chanctx,
+	.switch_vif_chanctx = ieee80211_emulate_switch_vif_chanctx,
 	.hw_scan = rk960_hw_scan,
 #ifdef ROAM_OFFLOAD
 	.sched_scan_start = rk960_hw_sched_scan_start,
