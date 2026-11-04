@@ -127,13 +127,16 @@
 		vol-up-key {
 			label = "volume up";
 			linux,code = <115>;		/* KEY_VOLUMEUP */
-			press-threshold-microvolt = <1000000>;
+			/* adc-keys picks the smallest threshold above the measured
+			 * value: vol+ measured at 441mV, vol- at 37mV, released
+			 * at 1.8V. Thresholds must bracket those, in order. */
+			press-threshold-microvolt = <500000>;
 		};
 
 		vol-down-key {
 			label = "volume down";
 			linux,code = <114>;		/* KEY_VOLUMEDOWN */
-			press-threshold-microvolt = <300000>;
+			press-threshold-microvolt = <100000>;
 		};
 	};
 

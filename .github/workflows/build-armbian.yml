@@ -181,6 +181,10 @@ jobs:
                 echo "HCIATTACH_BUILD=failed" >> /src/rk960-build.status
                 echo "::warning::rk_hciattach 编译失败"; tail -20 /src/out-bt/build.log || true
               fi
+              # ---- 导出内核自带的 hi846.ko：相机调试时可直接 scp 换掉模块，免整镜像刷写 ----
+              mkdir -p /src/out-mod
+              cp -v drivers/media/i2c/hi846.ko /src/out-mod/ 2>/dev/null \
+                || echo "::warning::hi846.ko 未找到（CONFIG_VIDEO_HI846 可能不是 =m）"
             '
           cat "$GITHUB_WORKSPACE"/rk960-build.status 2>/dev/null || true
           ls -l "$GITHUB_WORKSPACE"/drivers/aic8800/*/*.ko
@@ -197,6 +201,7 @@ jobs:
             drivers/aic8800/*/*.ko
             drivers/rk960/*.ko
             out-bt/*
+            out-mod/*
             rk960-build.status
           if-no-files-found: ignore
           retention-days: 30

@@ -1,0 +1,59 @@
+diff --git a/drivers/media/i2c/hi846.c b/drivers/media/i2c/hi846.c
+index a3f77b8..243f527 100644
+--- a/drivers/media/i2c/hi846.c
++++ b/drivers/media/i2c/hi846.c
+@@ -1709,20 +1709,6 @@ static int hi846_set_format(struct v4l2_subdev *sd,
+ 		return 0;
+ 	}
+ 
+-	if (hi846->nr_lanes == 2) {
+-		if (!hi846->cur_mode->reg_list_2lane.num_of_regs) {
+-			dev_err(&client->dev,
+-				"this mode is not supported for 2 lanes\n");
+-			return -EINVAL;
+-		}
+-	} else {
+-		if (!hi846->cur_mode->reg_list_4lane.num_of_regs) {
+-			dev_err(&client->dev,
+-				"this mode is not supported for 4 lanes\n");
+-			return -EINVAL;
+-		}
+-	}
+-
+ 	mutex_lock(&hi846->mutex);
+ 
+ 	if (hi846->streaming) {
+@@ -1732,10 +1718,33 @@ static int hi846_set_format(struct v4l2_subdev *sd,
+ 
+ 	hi846->fmt = fmt;
+ 
++	/*
++	 * Select the mode first, then validate lane support: the check has to
++	 * look at the mode being switched *to*, not at the previous one.
++	 * Otherwise the first set_fmt fails forever whenever the default mode
++	 * (640x480) has no register list for the configured lane count - which
++	 * is the case for a 4-lane DT setup, as used on rk3566 boards.
++	 */
+ 	hi846->cur_mode =
+ 		v4l2_find_nearest_size(supported_modes,
+ 				       ARRAY_SIZE(supported_modes),
+ 				       width, height, mf->width, mf->height);
++
++	if (hi846->nr_lanes == 2) {
++		if (!hi846->cur_mode->reg_list_2lane.num_of_regs) {
++			dev_err(&client->dev,
++				"this mode is not supported for 2 lanes\n");
++			mutex_unlock(&hi846->mutex);
++			return -EINVAL;
++		}
++	} else {
++		if (!hi846->cur_mode->reg_list_4lane.num_of_regs) {
++			dev_err(&client->dev,
++				"this mode is not supported for 4 lanes\n");
++			mutex_unlock(&hi846->mutex);
++			return -EINVAL;
++		}
++	}
+ 	dev_dbg(&client->dev, "%s: found mode: %dx%d\n", __func__,
+ 		hi846->cur_mode->width, hi846->cur_mode->height);
+ 

@@ -1,0 +1,51 @@
+From: local <local@localhost>
+Subject: [PATCH] media: i2c: hi846: do not return the runtime PM reference
+ count as an error code from .s_ctrl()
+
+hi846_set_ctrl() stores the return value of pm_runtime_get_if_in_use() in
+@ret and only checks it for 0 / -EAGAIN.  That helper returns 1 when the
+device is already runtime-active (and a reference has just been taken), so
+@ret enters the switch() holding 1.  The V4L2_CID_VBLANK and
+V4L2_CID_EXPOSURE branches call hi846_write_reg_16(hi846, reg, val, &ret),
+which only writes *err on failure and leaves it untouched on success, so a
+successful control update returns 1 instead of 0.
+
+__v4l2_ctrl_handler_setup() propagates that 1, hi846_start_streaming()
+bails out with "if (ret) return ret" before HI846_REG_MODE_SELECT is ever
+written, and .s_stream() reports failure.  The result is that
+v4l2_subdev_enable_streams() returns 1 to the capture driver and the
+pipeline never starts, with no error message anywhere:
+
+  rockchip-cif fdfe0000.video-capture: enable streams 0:0x1 failed: 1
+
+Keep the PM reference count out of @ret and use <= 0 for the early return.
+
+Signed-off-by: local <local@localhost>
+---
+diff --git a/drivers/media/i2c/hi846.c b/drivers/media/i2c/hi846.c
+index a3f77b8..e231f78 100644
+--- a/drivers/media/i2c/hi846.c
++++ b/drivers/media/i2c/hi846.c
+@@ -1353,9 +1353,20 @@ static int hi846_set_ctrl(struct v4l2_ctrl *ctrl)
+ 					 exposure_max);
+ 	}
+ 
+-	ret = pm_runtime_get_if_in_use(&client->dev);
+-	if (!ret || ret == -EAGAIN)
++	/*
++	 * pm_runtime_get_if_in_use() returns 1 when the device is already
++	 * active and a reference has been taken, 0 when it is not in use and
++	 * a negative error code otherwise.  Keep that value out of @ret: from
++	 * here on @ret is the error code of this callback, and the VBLANK and
++	 * EXPOSURE branches below only write it on failure
++	 * (hi846_write_reg_16() leaves @ret untouched on success).  A stale 1
++	 * turns a successful control update into an error, which makes
++	 * __v4l2_ctrl_handler_setup() fail and aborts streaming before the
++	 * sensor is ever switched to streaming mode.
++	 */
++	if (pm_runtime_get_if_in_use(&client->dev) <= 0)
+ 		return 0;
++	ret = 0;
+ 
+ 	switch (ctrl->id) {
+ 	case V4L2_CID_ANALOGUE_GAIN:
