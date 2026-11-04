@@ -170,6 +170,23 @@
 		post-power-on-delay-ms = <200>;
 	};
 
+	/*
+	 * OOB host-wake line of the RK960 WiFi combo (same as vendor dts:
+	 * WIFI,host_wake_irq = GPIO2_B2).  The rk960 firmware never asserts
+	 * in-band SDIO interrupts; without this node the driver times out in
+	 * the startup handshake ("Timeout waiting on device startup") while
+	 * GPIO2_B2 sits high.
+	 */
+	wireless-wlan {
+		compatible = "wlan-platdata";
+		rockchip,grf = <&grf>;
+		wifi_chip_type = "rk960";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_host_wake_h>;
+		WIFI,host_wake_irq = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
 	dc_12v: dc-12v {
 		compatible = "regulator-fixed";
 		regulator-name = "dc_12v";
