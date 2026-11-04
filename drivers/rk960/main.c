@@ -252,6 +252,9 @@ static const struct ieee80211_ops rk960_ops = {
 	.remove_interface = rk960_remove_interface,
 	.change_interface = rk960_change_interface,
 	.tx = rk960_tx,
+	/* mandatory since 6.18 (mac80211 main.c alloc WARN_ON); same helper
+	 * mainline cw1200 uses for legacy queue-managing drivers */
+	.wake_tx_queue = ieee80211_handle_wake_tx_queue,
 	.hw_scan = rk960_hw_scan,
 #ifdef ROAM_OFFLOAD
 	.sched_scan_start = rk960_hw_sched_scan_start,
