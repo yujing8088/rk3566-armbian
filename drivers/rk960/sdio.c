@@ -387,6 +387,11 @@ static int rk960_sdio_probe(struct sdio_func *func,
 		sdio_release_host(func);
 		sdio_set_drvdata(func, NULL);
 		kfree(self);
+		/* self is gone: dereferencing it below (or relying on the
+		 * dangling self->core) made the next rmmod oops in
+		 * rk960_core_release() and left the module stuck in the
+		 * "Unloading" state until a power cycle. */
+		return status;
 	}
 
 	self->core->hwbus_priv = self;

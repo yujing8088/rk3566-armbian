@@ -1200,6 +1200,10 @@ err2:
 	rk960_unregister_bh(hw_priv);
 err1:
 	rk960_free_common(dev);
+	/* @core was published before the bring-up sequence; leaving it
+	 * pointing at freed memory made the caller's cleanup touch a dead
+	 * rk960_common (rmmod oopsed in rk960_core_release). */
+	*core = NULL;
 err:
 	return err;
 }
