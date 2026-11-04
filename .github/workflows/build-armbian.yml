@@ -171,7 +171,8 @@ jobs:
               fi
               # ---- rk_hciattach 用户态 BT 加载工具 ----
               mkdir -p /src/out-bt
-              if aarch64-linux-gnu-gcc -O2 -Wall -D_GNU_SOURCE -I/src/tools/rk-hciattach \
+              # -static: CI cross-gcc links GLIBC_2.38, board bookworm only has 2.36
+              if aarch64-linux-gnu-gcc -O2 -Wall -D_GNU_SOURCE -static -I/src/tools/rk-hciattach \
                    -DFIRMWARE_DIR=\""/lib/firmware/"\" \
                    -o /src/out-bt/rk_hciattach \
                    /src/tools/rk-hciattach/hciattach.c /src/tools/rk-hciattach/hciattach_rk.c 2>/src/out-bt/build.log; then
