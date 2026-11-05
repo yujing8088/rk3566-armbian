@@ -4,12 +4,22 @@
 > 输出：可构建出 Armbian 镜像的完整板级支持包（板卡配置 + 自研 DTB + 刷机/救砖脚本）
 >
 > **当前状态（2026-11-05）：相机、四键、显示、触摸、音频、麦克风、USB 三口、WiFi、蓝牙全部打通。**
-> 最新镜像 `Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_bookworm_current_6.18.60_minimal.img`
+>
+> 最新镜像（**Ubuntu 22.04 LTS**）
+> `Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_jammy_current_6.18.60_minimal.img`
+> （1,929,379,840 字节 / 1.80 GiB，
+> `sha256 c3a36b97a5507566af620674c456aa414b47df7cdf6b8a6c0ba2349e3c5f212f`，
+> CI run `42028287746`，commit `69e0298`）。整盘镜像，直接刷，不分片。
+>
+> 上一版（**Debian 12 bookworm**）
+> `Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_bookworm_current_6.18.60_minimal.img`
 > （1,904,214,016 字节 / 1.77 GiB，
 > `sha256 bf8cef896355963c030494a0538093b8c42b0130cb80a7423015220953fda601`，
-> CI run `41970705615`，commit `28c2d94`）。整盘镜像，直接刷，不分片。
-> 该版已内置 **bluez**（`hciconfig`/`bluetoothctl`/`bluetoothd` 开箱可用），
-> 冷启动实测：开机 4 s `hci0 UP RUNNING`、WiFi 扫描 4 BSS、BLE 扫描 4 设备。
+> CI run `41970705615`，commit `28c2d94`）。
+>
+> 两个版本均由同一套板级支持产出（内核 6.18.60 current），都内建 **bluez**
+> （`hciconfig`/`bluetoothctl`/`bluetoothd` 开箱可用）。bookworm 冷启动实测：
+> 开机 4 s `hci0 UP RUNNING`、WiFi 扫描 4 BSS、BLE 扫描 4 设备。
 > 逐轮进展、根因与踩坑记录见 **[`CHANGELOG.md`](CHANGELOG.md)**。
 
 ---
@@ -112,6 +122,7 @@ armbian/
 ```bash
 cd armbian
 ./build.sh                    # 默认 Debian bookworm + 当前内核分支
+./build.sh jammy current      # Ubuntu 22.04 LTS
 ./build.sh noble edge         # 指定发行版 / 内核分支
 ```
 
@@ -263,7 +274,8 @@ git push -u origin main
 ```
 
 然后网页：仓库 → **Actions** → `build-armbian` → **Run workflow**，
-可选 `release`（bookworm / noble / trixie）、`branch`（current / edge）、`minimal`。
+可选 `release`（jammy / bookworm / noble / trixie）、`branch`（current / edge）、`minimal`。
+`jammy` 即 Ubuntu 22.04 LTS（Armbian 里属社区支持等级，apt 仓库 `jammy/main` 齐全，实测可正常构建）。
 
 ### 8.3 跑完拿镜像
 

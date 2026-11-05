@@ -303,9 +303,22 @@ jobs:
           sudo umount /mnt/r
           sudo losetup -d "$LOOP"
           echo "注入完成"
-          # 注入改动了镜像内容，Armbian 产出的 .sha 已失效 → 重算
-          cd output/images && IMG=$(ls -1 *.img | head -1) && sha256sum -b "$IMG" | awk '{print $1"  "$2}' > "${IMG}.sha"
-          echo "重算 sha256:"; cat "${IMG}.sha"
+          # 注入改动了镜像内容，Armbian 产出的 .sha 已失效 → 重算。
+          # 注意：本步骤的 cwd 是仓库根目录（不是 build/），所以路径必须带 build/ 前缀。
+          # 之前的 `cd output/images` 会失败，而 `set -e` 不会因 && 链里的 cd 失败退出，
+          # 结果整条链被静默跳过，artifact 里留下的是「注入驱动之前」的旧 sha256
+          # （2026-11-05 jammy 构建踩到：实测 c3a36b97… vs 打包的 444893e0…）。
+          IMG_PATH=$(ls -1 build/output/images/*.img | head -1)
+          ( cd build/output/images && sha256sum -b "$(basename "${IMG_PATH}")" \
+              | awk '{print $1"  "$2}' > "$(basename "${IMG_PATH}").sha" )
+          IMG_PATH=$(realpath "${IMG_PATH}")
+          echo "重算 sha256:"
+          cat "${IMG_PATH}.sha"
+          # 自校验：算出来的必须和刚写的文件一致，否则直接失败，避免再发错 sha
+          ACTUAL=$(sha256sum -b "${IMG_PATH}" | awk '{print $1}')
+          DECLARED=$(awk '{print $1}' "${IMG_PATH}.sha")
+          [[ "${ACTUAL}" == "${DECLARED}" ]] || { echo "!! sha256 重算失败"; exit 1; }
+          echo "✅ sha256 自校验通过: ${ACTUAL}"
 
       - name: 验证镜像内容（面板 DTB + panel-simple-dsi.ko + 触摸固件）
         working-directory: build

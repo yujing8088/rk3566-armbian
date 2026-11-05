@@ -11,6 +11,56 @@
 
 ---
 
+## 2026-11-05（晚）— 产出 Ubuntu 22.04 LTS 镜像
+
+### 做法：板级支持零改动，只放开发行版选项
+
+`config/distributions/jammy` 在 Armbian 里是社区支持等级（community supported），
+但 `apt.armbian.com` 的 `jammy/main`、`jammy-desktop`、`jammy-utils` 组件齐全，
+`build.sh` 本来就支持 `RELEASE` 透传，所以只需要：
+
+1. `.github/workflows/build-armbian.yml` 的 `release` 选项加 `jammy`
+2. 触发时 `release=jammy&branch=current&minimal=true`
+
+其余全部复用：自研 DTB 安装、silead 触摸固件、RK960/AIC8800 驱动注入、
+`rk_hciattach` + `rk960-bt.service`、bluez 兜底安装 —— 这些都是 release 无关的。
+
+### 产物
+
+`Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_jammy_current_6.18.60_minimal.img`
+1,929,379,840 字节（1.80 GiB），内核 6.18.60 current，
+`sha256 c3a36b97a5507566af620674c456aa414b47df7cdf6b8a6c0ba2349e3c5f212f`，
+CI run `42028287746`（耗时 1 h 55 min，与 bookworm 一致）。
+
+镜像内已核实字符串命中：`Ubuntu 22.04`、`bluetooth.service`、`bluetoothctl`、
+`hciconfig`（jammy 里在 `/bin/hciconfig`）、`rk960-bt.service`、`rk_hciattach`、
+`rk960_wifi.bin`、`gslx680_fw.fw`、`panel-simple-dsi`、`rk3566-evb2-lp4x-v10.dtb`、`aic8800_fdrv.ko`。
+
+### 踩坑：注入后重算 sha256 的 `cd` 路径错了，artifact 里带的是旧哈希
+
+workflow 里「注入驱动」这一步的 cwd 是**仓库根目录**，但收尾写的是：
+
+```bash
+cd output/images && ... && sha256sum -b "$IMG" | ... > "${IMG}.sha"
+```
+
+`cd output/images` 必然失败（真实路径是 `build/output/images`）。而 `set -e`
+对 `&&` 链里非末尾命令的失败**不会退出**，于是整条链被静默跳过，
+artifact 里打包的是 Armbian 构建阶段（注入之前）生成的 `.sha`。
+本次实测：打包值 `444893e0…`，真实值 `c3a36b97…`（本地 `sha256sum` 与
+Python `hashlib` 双向确认；拿 bookworm 镜像对照过，本地算出的值与已发布的
+`bf8cef89…` 一致，排除本地工具问题）。
+
+修法（commit 见下）：
+
+- 路径改为 `build/output/images/`，用子 shell `( cd ... )` 只影响本次计算
+- 算完立刻**自校验**：`sha256sum -b "$IMG"` 与刚写入的 `.sha` 比对，不一致直接 `exit 1`
+
+> ⚠️ 已交付的 jammy 镜像请以 `c3a36b97…` 为准；
+> 同目录下的 `.sha256` 由本地按真实内容重算覆盖，zip 内的旧 `.sha` 已删除。
+
+---
+
 ## 2026-11-05 — 首版镜像实机验证：BT 根因定案 + WiFi「卡死」是假象
 
 ### 蓝牙：ROM 播报波特率是 115200，不是 1500000
