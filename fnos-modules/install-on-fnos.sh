@@ -13,8 +13,9 @@ echo "== 安装模块"
 install -Dm644 "$HERE/panel-simple-dsi.ko" "/lib/modules/$REL/kernel/drivers/gpu/drm/panel/panel-simple-dsi.ko"
 install -Dm644 "$HERE/silead.ko"           "/lib/modules/$REL/kernel/drivers/input/touchscreen/silead.ko"
 
-echo "== 安装触摸固件"
+echo "== 安装触摸固件（两个名字都放，驱动按 DT firmware-name 取用）"
 install -Dm644 "$HERE/gsl1680-evb2.fw" "/lib/firmware/silead/gsl1680-evb2.fw"
+cp -f "/lib/firmware/silead/gsl1680-evb2.fw" "/lib/firmware/silead/gslx680_fw.fw"
 
 echo "== depmod + 开机自动加载"
 depmod -a

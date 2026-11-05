@@ -24,6 +24,15 @@ ophub 内核 `CONFIG_MODVERSIONS=n`、`CONFIG_MODULE_SIG=n`，所以只要
 `workflow_dispatch`），产物 artifact：`fnos-evb2-modules-6.18.18-trim`
 含 `panel-simple-dsi.ko`、`silead.ko`、`gsl1680-evb2.fw`。
 
+> **实战记录（2026-11-06，推荐方式：板上原生编译）**
+> fnOS 1.2.1000+ 升级后内核为 `6.18.18.c1196-trim`（与 ophub 原版
+> `6.18.18-trim` 的 vermagic 不同：无 preempt）。而 fnOS 板上自带
+> `/usr/src/linux-headers-6.18.18.c1196-trim`（含 Module.symvers）+
+> gcc12 —— 把 `panel-simple-dsi.c` + 补丁版 `silead.c` + Makefile 传上去
+> `make -C /usr/src/linux-headers-6.18.18.c1196-trim M=$PWD modules`
+> 即可编出精确匹配的 .ko，无需 CI。触摸固件驱动按 DT 取名
+> `silead/gslx680_fw.fw`（两份名字都装）。
+
 ## 板端安装
 
 ```bash
