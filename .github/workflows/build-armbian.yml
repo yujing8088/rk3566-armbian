@@ -121,6 +121,11 @@ jobs:
           [ -d userpatches/firmware ] && cp -rv userpatches/firmware build/userpatches/ || true
           ls -lR build/userpatches/kernel 2>/dev/null || true
           ls -l build/userpatches/dtb/ build/userpatches/config/boards/
+          # 桌面镜像专属：configng 的 common.yaml 桌面列表按 noble+ 编写，
+          # jammy arm64 缺 pipewire-libcamera / gstreamer1.0-libcamera /
+          # glmark2-x11 / glmark2-es2-x11，apt 会整体拒绝安装导致构建中止。
+          # 补丁会校验锚点存在，框架改版时立刻失败而不是白跑两小时。
+          bash tools/patch-jammy-desktop.sh build
 
       - name: 编译 Armbian
         working-directory: build
