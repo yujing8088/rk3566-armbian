@@ -42,7 +42,10 @@ patch -p1 --fuzz=3 < "$KIT_DIR/patches/1000-input-silead-support-gslx680-downloa
 cp drivers/input/touchscreen/silead.c "$MODDIR/silead.c"
 
 echo "== [5/6] 编译模块"
-make ARCH=arm64 CROSS_COMPILE="$CROSS" LOCALVERSION=-trim M="$MODDIR" modules -j"$(nproc)"
+# modules_prepare 不生成内核 Module.symvers（完整内核构建才有）。
+# MODVERSIONS=n 下符号在加载时由内核运行时解析，modpost 校验降级为警告即可：
+touch Module.symvers
+make ARCH=arm64 CROSS_COMPILE="$CROSS" LOCALVERSION=-trim M="$MODDIR" modules KBUILD_MODPOST_WARN=1 -j"$(nproc)"
 
 echo "== [6/6] 校验 vermagic"
 for ko in panel-simple-dsi silead; do
