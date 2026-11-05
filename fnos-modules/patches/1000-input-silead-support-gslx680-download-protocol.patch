@@ -1,0 +1,211 @@
+--- a/drivers/input/touchscreen/silead.c
++++ b/drivers/input/touchscreen/silead.c
+@@ -24,6 +24,7 @@
+ #include <linux/irq.h>
+ #include <linux/regulator/consumer.h>
+ 
++#include <linux/string.h>
+ #include <linux/unaligned.h>
+ 
+ #define SILEAD_TS_NAME		"silead_ts"
+@@ -35,14 +36,16 @@
+ #define SILEAD_REG_CLOCK	0xE4
+ #define SILEAD_REG_STATUS	0xB0
+ #define SILEAD_REG_ID		0xFC
++#define SILEAD_REG_PAGE	0xF0
+ #define SILEAD_REG_MEM_CHECK	0xB0
+ 
+ #define SILEAD_STATUS_OK	0x5A5A5A5A
+-#define SILEAD_TS_DATA_LEN	44
++#define SILEAD_TS_DATA_LEN	16
+ #define SILEAD_CLOCK		0x04
+ 
+ #define SILEAD_CMD_RESET	0x88
+ #define SILEAD_CMD_START	0x00
++#define SILEAD_CMD_DOWNLOAD	0x12
+ 
+ #define SILEAD_POINT_DATA_LEN	0x04
+ #define SILEAD_POINT_Y_OFF      0x00
+@@ -56,7 +59,8 @@
+ #define SILEAD_POWER_SLEEP	20
+ #define SILEAD_STARTUP_SLEEP	30
+ 
+-#define SILEAD_MAX_FINGERS	10
++#define SILEAD_MAX_FINGERS	3
++#define SILEAD_FW_BURST		0x20
+ 
+ enum silead_ts_power {
+ 	SILEAD_POWER_ON  = 1,
+@@ -200,6 +204,27 @@
+ 	}
+ }
+ 
++/*
++ * GSLX680 native register framing: [register][data...] with no SMBus length
++ * byte in between. I2C_SMBUS_I2C_BLOCK_DATA prepends one, which shifts every
++ * payload by a byte and silently corrupts firmware download.
++ */
++static int silead_ts_write_raw(struct i2c_client *client, u8 reg,
++			       const void *data, int len)
++{
++	u8 buf[129];
++	int ret;
++
++	if (len + 1 > (int)sizeof(buf))
++		return -EINVAL;
++
++	buf[0] = reg;
++	memcpy(&buf[1], data, len);
++
++	ret = i2c_master_send(client, buf, len + 1);
++	return ret < 0 ? ret : 0;
++}
++
+ static bool silead_ts_handle_pen_data(struct silead_ts_data *data, u8 *buf)
+ {
+ 	u8 *coord = buf + SILEAD_POINT_DATA_LEN;
+@@ -248,8 +273,15 @@
+ 	int touch_nr, softbutton, error, i;
+ 	bool softbutton_pressed = false;
+ 
+-	error = i2c_smbus_read_i2c_block_data(client, SILEAD_REG_DATA,
+-					      SILEAD_TS_DATA_LEN, buf);
++	u8 reg = SILEAD_REG_DATA;
++
++	error = i2c_master_send(client, &reg, 1);
++	if (error < 0) {
++		dev_err(dev, "Data address write error %d\n", error);
++		return;
++	}
++
++	error = i2c_master_recv(client, buf, SILEAD_TS_DATA_LEN);
+ 	if (error < 0) {
+ 		dev_err(dev, "Data read error %d\n", error);
+ 		return;
+@@ -316,6 +348,17 @@
+ {
+ 	int error;
+ 
++	/*
++	 * GSLX680: the firmware window (0x00-0x7F) is only reachable after the
++	 * page register has been switched to the download bank. Without this
++	 * command the chip answers reads but every firmware write goes nowhere.
++	 */
++	error = i2c_smbus_write_byte_data(client, SILEAD_REG_PAGE,
++					  SILEAD_CMD_DOWNLOAD);
++	if (error)
++		goto i2c_write_err;
++	usleep_range(2000, 3000);
++
+ 	error = i2c_smbus_write_byte_data(client, SILEAD_REG_RESET,
+ 					  SILEAD_CMD_RESET);
+ 	if (error)
+@@ -363,8 +406,12 @@
+ 		goto i2c_write_err;
+ 	usleep_range(SILEAD_CMD_SLEEP_MIN, SILEAD_CMD_SLEEP_MAX);
+ 
+-	error = i2c_smbus_write_byte_data(client, SILEAD_REG_POWER,
+-					  SILEAD_CMD_START);
++	{
++		u32 zero = 0;
++
++		error = silead_ts_write_raw(client, SILEAD_REG_POWER, &zero,
++					    sizeof(zero));
++	}
+ 	if (error)
+ 		goto i2c_write_err;
+ 	usleep_range(SILEAD_CMD_SLEEP_MIN, SILEAD_CMD_SLEEP_MAX);
+@@ -398,6 +445,8 @@
+ 	const struct firmware *fw = NULL;
+ 	struct silead_fw_data *fw_data;
+ 	unsigned int fw_size, i;
++	u8 buf[SILEAD_FW_BURST * 4 + 1];
++	unsigned int cur = 1, flag = 1;
+ 	int error;
+ 
+ 	dev_dbg(dev, "Firmware file name: %s", data->fw_name);
+@@ -450,17 +499,57 @@
+ 	fw_size = fw->size / sizeof(*fw_data);
+ 	fw_data = (struct silead_fw_data *)fw->data;
+ 
++	/*
++	 * GSLX680 downloads 32 records (128 bytes) per I2C transfer, prefixed by
++	 * the offset of the first record in the batch. 0xF0 is not memory: it is
++	 * the page register and is always sent on its own.
++	 */
++	error = 0;
+ 	for (i = 0; i < fw_size; i++) {
+-		error = i2c_smbus_write_i2c_block_data(client,
+-						       fw_data[i].offset,
+-						       4,
+-						       (u8 *)&fw_data[i].val);
+-		if (error) {
+-			dev_err(dev, "Firmware load error %d\n", error);
+-			break;
++		u8 off = fw_data[i].offset;
++
++		if (fw_data[i].offset > 0xff) {
++			dev_warn(dev, "Skipping bogus fw record %u (%#x)\n",
++				 i, fw_data[i].offset);
++			continue;
++		}
++
++		if (off == SILEAD_REG_PAGE) {
++			u32 page = fw_data[i].val;
++
++			error = silead_ts_write_raw(client, SILEAD_REG_PAGE,
++						    &page, sizeof(page));
++			if (error) {
++				dev_err(dev, "Firmware page switch error %d\n",
++					error);
++				break;
++			}
++			flag = 1;
++			cur = 1;
++			continue;
++		}
++
++		if ((flag % SILEAD_FW_BURST) == 1) {
++			buf[0] = off;
++			cur = 1;
++		}
++		put_unaligned_le32(fw_data[i].val, &buf[cur]);
++		cur += 4;
++
++		if ((flag % SILEAD_FW_BURST) == 0) {
++			error = silead_ts_write_raw(client, buf[0], &buf[1],
++						    cur - 1);
++			if (error) {
++				dev_err(dev, "Firmware load error %d\n", error);
++				break;
++			}
++			cur = 1;
+ 		}
++		flag++;
+ 	}
+ 
++	dev_info(dev, "Firmware '%s' loaded: %u records\n", data->fw_name, i);
++
+ 	release_firmware(fw);
+ 	return error ?: 0;
+ }
+@@ -558,6 +647,19 @@
+ 	if (error)
+ 		return error;
+ 
++	error = silead_ts_startup(client);
++	if (error)
++		return error;
++
++	/*
++	 * GSLX680 only jumps into the freshly downloaded firmware after a second
++	 * reset/startup cycle. Skipping it leaves the chip in the ROM bootloader:
++	 * it replies on I2C, but 0xB0 never becomes 0x5a5a5a5a.
++	 */
++	error = silead_ts_reset(client);
++	if (error)
++		return error;
++
+ 	error = silead_ts_startup(client);
+ 	if (error)
+ 		return error;

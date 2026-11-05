@@ -1,0 +1,27 @@
+name: build-fnnas-modules
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'fnos-modules/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build panel-simple-dsi.ko + silead.ko for 6.18.18-trim
+        run: bash fnos-modules/build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fnos-evb2-modules-6.18.18-trim
+          path: |
+            fnos-modules/modules/*.ko
+            fnos-modules/modules/SHA256SUMS
+            fnos-modules/firmware/gsl1680-evb2.fw
+          if-no-files-found: error
