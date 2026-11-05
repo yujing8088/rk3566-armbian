@@ -5,7 +5,11 @@
 >
 > **当前状态（2026-11-05）：相机、四键、显示、触摸、音频、麦克风、USB 三口、WiFi、蓝牙全部打通。**
 > 最新镜像 `Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_bookworm_current_6.18.60_minimal.img`
-> （1.77 GiB，`sha256 e0877e4c60b4211013627ee38f066daf399eb698bc12037d767932ce501eac8f`，CI run `41951366060`）。
+> （1,904,214,016 字节 / 1.77 GiB，
+> `sha256 bf8cef896355963c030494a0538093b8c42b0130cb80a7423015220953fda601`，
+> CI run `41970705615`，commit `28c2d94`）。整盘镜像，直接刷，不分片。
+> 该版已内置 **bluez**（`hciconfig`/`bluetoothctl`/`bluetoothd` 开箱可用），
+> 冷启动实测：开机 4 s `hci0 UP RUNNING`、WiFi 扫描 4 BSS、BLE 扫描 4 设备。
 > 逐轮进展、根因与踩坑记录见 **[`CHANGELOG.md`](CHANGELOG.md)**。
 
 ---
@@ -189,8 +193,8 @@ armbian-resize-filesystem
 | 6 | RTC | `hwclock -r` | 读到时间（HYM8563） |
 | 7 | 按键/LED | `evtest` / `ls /sys/class/leds` | 看到 `key-power`、`led-work` |
 | 8 | TF 卡 | 插卡后 `lsblk` | 出现 `mmcblk0`（若板上有卡槽） |
-| 9 | WiFi | `ip link set wlan0 up` → `iw dev wlan0 set type managed; iw dev wlan0 scan` | `wlan0` 出现、扫描出若干 BSS（驱动 `rk960` 由 BT 服务在蓝牙就绪后加载，开机约 5~10 s） |
-| 10 | 蓝牙 | `hciconfig hci0` / `bluetoothctl --timeout 8 scan on` | `UP RUNNING`，扫描到 BLE 设备 |
+| 9 | WiFi | `ip link set wlan0 up` → `iw dev wlan0 set type managed; iw dev wlan0 scan` | `wlan0` 出现、扫描出若干 BSS（驱动 `rk960` 由 BT 服务在蓝牙就绪后加载，实测开机几十秒内完成） |
+| 10 | 蓝牙 | `hciconfig hci0` / `bluetoothctl --timeout 28 scan on` | `UP RUNNING`（开机约 4 s），扫描到 BLE 设备。**扫描窗口给到 25 s 以上**，太短可能一个都没有；`hcitool lescan` 会因 bluetoothd 占用报 `Input/output error`，正常现象 |
 | 11 | 相机 | `media-ctl -d /dev/media0 -p`、`v4l2-ctl -d /dev/video0 --list-formats-ext` | 拓扑含 `hi846 → rockchip-mipi-csi → rkcif-mipi0`；**抓帧目前仍报 `-EINVAL`**（见第 7 节） |
 
 **第 1 项不过怎么办**（黑屏/无日志时按顺序排查）：
@@ -229,6 +233,8 @@ armbian-resize-filesystem
 | 触摸 GSLX680 | ✅ 已完成 | 主线 `silead.c` + 内核补丁 `userpatches/kernel/archive/rockchip64-6.18/1000-input-silead-support-gslx680-download-protocol.patch`；固件用 `gslx680_fw.fw`（5247 条） |
 | 音频播放（喇叭） | ✅ 已完成 | 板载是 `I2S1 → 8 脚 I2S DAC（CS4333 类，需 MCLK 12.288 MHz）→ ANT8110 D 类功放 → 喇叭座`，功放使能 `GPIO1_A6`(`spk-ctl`，高有效)。三个叠加 bug 导致"PCM 正常但完全无声"：① I2S1 TX 主时钟实际跑 1 GHz（dtsi 只给 `CLK_I2S1_8CH_TX_SRC` 设 1.188 GHz，而 `clocks` 引用的是无 `CLK_SET_RATE_PARENT` 的门控，`clk_set_rate(12288000)` 被静默忽略，实测 10 s 音频 61 ms 播完）；② `I2S1_MCLKOUT_TX` 是 deviceless gate 无人 enable，PA2 无 MCLK 输出；③ `rockchip,digital-loopback` 与主模式冲突使 PCM 打开返回 `-EINVAL`。修法全在 DTS：`assigned-clocks` 显式走 FRAC 分频器给 12.288 MHz、在 `simple-audio-card,codec` 子节点声明 `clocks = <&cru I2S1_MCLKOUT_TX>`（simple-card 会在启动 PCM 时 `clk_prepare_enable`，停止时关闭）、删 loopback、SoC 做主。验证：PDM 麦克风闭环录到 1 kHz 比噪声底高 100 dB，谐波 −40 dB（THD≈1.5%），音准误差 <1% |
 | 麦克风（PDM 阵列） | ✅ 已完成 | `&pdm` 三麦 `sdi1/2/3` + `rockchip,path-map = <1 2 3 0>`，声卡 `rockchip,pdm-mic-array`（`hw:1,0`）。`tools/specscan.py` 可直接当作"声学探头"判断喇叭是否发声、频率是否正确 |
+| 开机自动热点 | ⚠️ 未内置 | 镜像里**没有 `hostapd` / `dnsmasq`**（minimal 未装），所以只能连别人的 AP，不能自己开热点。要做「开机即开 `rk960-test` 热点 + NAT/DHCP」需把这两个包加进 `PACKAGE_LIST_BOARD` 并补 `hostapd.conf` + `dnsmasq.d` + nftables NAT 单元 |
+| wlan0 MAC 随机 | ⚠️ 未固定 | 每次启动 MAC 都变（如 `ae:d0:94:89:85:56`）。要固定热点 BSSID 或做 DHCP 地址绑定时，加 `hwaddress` 配置或 `macchanger` 规则 |
 | 以太网 100M 上限 | 硬件限制 | 板上是 RMII PHY，物理上就是百兆；要千兆得换 RGMII PHY 的板子 |
 | HDMI | 板上无 | 厂商 DTB 里 `hdmi` 也是 disabled |
 

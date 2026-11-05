@@ -73,6 +73,32 @@ gpiomon 监听）等实验把 SDIO/芯片状态搞坏后的现象，不是驱动
 
 **提交**：`28c2d94`（推送后远端 `398e053`）· **CI**：run `41970705615`
 
+### 第二版镜像（bluez 内置）刷机后全绿
+
+刷入 `bf8cef89…` 后冷启动 34 秒时抓的状态：
+
+| 项 | 结果 |
+|---|---|
+| bluez | ✅ 内置 `bluez 5.66-1+deb12u2`，`hciconfig` / `bluetoothctl` 开箱可用 |
+| `bluetooth.service` | ✅ active（CI 补的 wants 链接生效） |
+| `rk960-bt.service` | ✅ active，`attempt 1` → 开机 **4 s** `hci0 UP RUNNING` |
+| hci0 | `UP RUNNING`，ACL MTU 1021:8 / SCO 255:4，errors 0 |
+| `rk960` 驱动 | ✅ 已加载，`wlan0` 开机几十秒内出现（上一版要 4.5 分钟的问题消失） |
+| WiFi | `ip link up` 立即返回，`iw scan` 1 秒 **4 个 BSS** |
+| BLE | 28 s 扫到 **4 个设备**（含 `midea`），与 WiFi 共存正常 |
+
+dmesg 里仅有已知无害项：panfrost 无 mali regulator（GPU 不用）、`aic8800_bsp` 上电失败
+（不用它）、`uart fe650000` DMA 失败（走 PIO）、`rk960_sdd.txt` 缺文件（不影响）。
+
+**镜像**：`Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_bookworm_current_6.18.60_minimal.img`
+`sha256 bf8cef896355963c030494a0538093b8c42b0130cb80a7423015220953fda601`（1,904,214,016 字节）
+核对方式：本地 `sha256sum` 与 CI 的 `.sha256` 一致；另在 `.img` 里直接搜到
+`bluetooth.service` / `bluetoothctl` / `bluez-tools` / `bt_ready` 字符串，确认两个修复都真的进了镜像。
+
+> 踩坑留档：用 `timeout N cmd | grep …` 抓扫描结果，管道块缓冲会在 `timeout` 发 SIGTERM 时
+> 把输出丢掉，导致误判「扫不到设备」。验证这类命令要重定向到文件再读；
+> 另外 `bluetoothctl` 需 ≥25 s 才稳定出结果，紧跟 WiFi 扫描的 16 s 窗口可能为 0。
+
 ---
 
 ## 2026-11-04 — 摄像头链路 / 外接四键 / RK960 WiFi+BT 驱动移植
@@ -198,5 +224,6 @@ dclk 由 `PLL_VPLL` 700 MHz / 10 = 70 MHz。
 | 相机 `STREAMON -EINVAL` | 拓扑/sensor 都正常，抓不到帧 | 检查 rkcif 的 crop（当前 `crop:(0,0)/0x0`）与 mplane 格式协商，或对比厂商 BSP 的 rkcif 版本 |
 | `hi846` xvclk | 24 MHz，驱动期望 25 MHz（只 warn） | 改 DTS 的 `clock-frequency` 到 25000000 试一次（本板晶振是 24 MHz，可能不可行） |
 | `rk960_sdd.txt` | 缺失，加载时只 warn | 从厂商 `vendor.ext` 里找出来一起打进固件目录 |
-| WiFi 热点自动化 | hostapd/dnsmasq 未装 | 需要时 `apt install hostapd dnsmasq` + systemd 单元 |
+| WiFi 热点自动化 | hostapd/dnsmasq 未装（minimal 镜像），当前只能连 AP 不能开热点 | 加进 `PACKAGE_LIST_BOARD` + `hostapd.conf` + `dnsmasq.d` + nftables NAT 单元 |
+| `wlan0` MAC 随机 | 每次启动都变（如 `ae:d0:94:89:85:56`） | 固定热点 BSSID 或做 DHCP 绑定时需要加 `hwaddress` / `macchanger` 规则 |
 | 摄像头 ISP | RK3568 上游无 ISP | 只能出 RAW Bayer，软件上做 debayer（`tools/` 里可加） |
