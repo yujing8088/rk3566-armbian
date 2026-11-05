@@ -249,7 +249,7 @@ jobs:
           if [ -f out-bt/rk_hciattach ] && file out-bt/rk_hciattach | grep -q ARM; then
             sudo cp out-bt/rk_hciattach /mnt/r/usr/local/bin/
             sudo chmod 755 /mnt/r/usr/local/bin/rk_hciattach
-            # BT 初始化脚本：B7(GPIO2_B7=79) 复位脉冲 + hciattach @1.5M（ROM 播报波特率）+ 重试
+            # BT 初始化脚本：B7(GPIO2_B7=79) 复位脉冲 + hciattach @115200（ROM 播报/下载波特率）
             # 注意：BT 固件下载要求芯片尚未跑 WiFi 固件，故 rk960 由脚本在 BT 成功后 modprobe
             sudo cp tools/rk960-bt-init.sh /mnt/r/usr/local/bin/rk960-bt-init.sh
             sudo chmod 755 /mnt/r/usr/local/bin/rk960-bt-init.sh
@@ -257,11 +257,13 @@ jobs:
               '[Unit]' \
               'Description=RK960 Bluetooth init (hciattach) + WiFi driver load' \
               'After=multi-user.target' \
+              'StartLimitIntervalSec=0' \
               '[Service]' \
               'Type=simple' \
               'ExecStart=/usr/local/bin/rk960-bt-init.sh' \
               'Restart=on-failure' \
-              'RestartSec=5' \
+              'RestartSec=20' \
+              'TimeoutStartSec=600' \
               '[Install]' \
               'WantedBy=multi-user.target' \
               | sudo tee /mnt/r/etc/systemd/system/rk960-bt.service > /dev/null
