@@ -3,10 +3,10 @@
 > 输入：`android/` 目录下从该板子 eMMC 备份出来的 Android 11 分区镜像（16 个文件）
 > 输出：可构建出 Armbian 镜像的完整板级支持包（板卡配置 + 自研 DTB + 刷机/救砖脚本）
 >
-> **云端构建已完成**（2026-11-01）：
-> <https://github.com/yujing8088/rk3566-armbian> ·
-> 镜像 `images/Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_bookworm_current_6.18.60_minimal.img`
-> （1.81 GiB，`sha256 5408d23a7fcabb2a317d6d4aa9ce857aac5d9f3d1a4007c411f0b7903696cdf5`）
+> **当前状态（2026-11-05）：相机、四键、显示、触摸、音频、麦克风、USB 三口、WiFi、蓝牙全部打通。**
+> 最新镜像 `Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_bookworm_current_6.18.60_minimal.img`
+> （1.77 GiB，`sha256 e0877e4c60b4211013627ee38f066daf399eb698bc12037d767932ce501eac8f`，CI run `41951366060`）。
+> 逐轮进展、根因与踩坑记录见 **[`CHANGELOG.md`](CHANGELOG.md)**。
 
 ---
 
@@ -46,8 +46,8 @@ compatible = "rockchip,rk3566-evb2-lp4x-v10", "rockchip,rk3566"
 | eMMC | `sdhci@fe310000`，8bit，HS200，`txclk-tapnum=8` | ✅ |
 | TF 卡 | `sdmmc0`（厂商固件里被 `disabled`，本套件默认打开），CD=GPIO0_A4 | ✅ |
 | 以太网 | `gmac1` **RMII 100M**，PHY addr 0，reset=GPIO4_C2，25/50M 由 PHY 供给 | ✅ |
-| WiFi | **RK960**（瑞芯微自研 WiFi+BT），SDIO 4bit，`WL_REG_ON`=GPIO2_B1，32K=GPIO2_C6 | ❌ SDIO ID `0296:5349`(GCT)，不是 AIC8800；驱动私有、无公开源码，需厂家 `rk960.ko` 或改用 USB 网卡 |
-| 蓝牙 | RK960 BT（UART1 + 硬件流控，reset=GPIO2_D7，wake=GPIO2_D1 / host_wake=GPIO2_D0） | ❌ 同属 RK960 私有栈；另 `aic8800_btlpm` 是 allwinner 专用，主线 `hci_uart` 也不发私有 HCI 下载命令 |
+| WiFi | **RK960**（瑞芯微自研 WiFi+BT combo），SDIO 4bit，`WL_REG_ON`=GPIO2_B1，32K=GPIO2_C6；SDIO ID `0296:5349`（= `RK960_DEVICE_ID_D`） | ✅ **已打通**：移植 radxa/rkwifibt 的 `drivers/rk960`（37 文件，cw1200 血统，纯 SDIO ID 匹配，无需 DTS 改动），配 `rk960_wifi*.bin` 固件。实测扫描 3~4 个 BSS、可切 AP 模式、与蓝牙共存 |
+| 蓝牙 | RK960 BT（UART1 + 硬件流控，reset=GPIO2_B7 即 gpio79，wake/host_wake 未用） | ✅ **已打通**：`tools/rk-hciattach` 下载固件（ROM 播报波特率 **115200**，下完切 3 M），由 `rk960-bt.service` 开机自动初始化。实测开机 4 s `hci0` UP RUNNING，BLE 扫描正常 |
 | USB | 丝印 **USB2.0 口**=`fcc00000`(dwc3, OTG 硬件)、**USB3.0 口**=`fd000000`(xHCI)、**HOST2/HOST3**=4pin 排针（`fd800000`/`fd880000` EHCI+OHCI）；VBUS 开关：OTG=`GPIO0_C6`、HOST 上游=`GPIO3_A2`、USB3.0 口=`GPIO3_A1`（厂商 dtb 写的 `GPIO0_A6` 在本板悬空，是错的） | ✅ **三个口全可用**：USB2.0/OTG 口强制 `dr_mode="host"`；USB3.0 口 + HOST2/HOST3 的 5V 由 `GPIO3_A1+A2` 控制（A2=regulator `vcc5v0_usb_host`，A1=`&gpio3` 的 `usb3-vbus-hog`）。实测 Logitech 接收器(046d:c53f) 在 USB3.0 口(fd000000/usb5) 正常枚举，键鼠事件正常 |
 | 显示 | MIPI-DSI0 800×1280@70MHz 4lane，背光 PWM5，enable=GPIO0_C7，reset=GPIO0_D5 | ✅ 已点亮出字 |
 | 触摸 | GSLX680（I2C1 0x40，中断 GPIO0_B5，复位 GPIO0_B6 高有效） | ✅ 已跑通 |
@@ -67,12 +67,20 @@ Android 侧版本信息：Android 11，`userdebug`，`selinux=permissive`，`ver
 ```
 armbian/
 ├── README.md                       ← 本文件
+├── CHANGELOG.md                    ← 逐轮进展 / 根因 / 踩坑记录（按日期）
 ├── build.sh                        ← 一键构建（Linux / Docker）
 ├── dts/rk3566-evb2-lp4x-v10.dts    ← 自研板级 DTS（主线风格，已编译验证）
 ├── out/rk3566-evb2-lp4x-v10.dtb    ← 编译产物，可直接用
 ├── out/ref-rk3566-box-demo.dtb     ← 备用 DTB（同参考设计，用于兜底对比）
+├── drivers/
+│   ├── rk960/                      ← RK960 WiFi 驱动（移植自 radxa/rkwifibt，适配 6.18）
+│   └── aic8800/                    ← AIC8800 驱动（与本板芯片不匹配，仅留档）
+├── firmware/rk960/                 ← rk960_wifi*.bin / rk960_bt*.bin（厂商固件提取）
 ├── userpatches/
 │   ├── config/boards/rk3566-evb2-lp4x-v10.csc   ← Armbian 板卡配置
+│   ├── config/kernel/linux-rockchip64-current.config  ← 内核配置（rkcif/rkcsi/ADC_KEYS）
+│   ├── kernel/archive/rockchip64-6.18/*.patch   ← 触摸 / rkcif 回移 / hi846 修复
+│   ├── firmware/silead/*.fw                     ← 触摸固件（8 个候选）
 │   └── dtb/rk3566-evb2-lp4x-v10.dtb             ← 构建时注入镜像
 ├── flash/
 │   ├── flash-linux.sh              ← rkdeveloptool 整盘刷 eMMC
@@ -81,8 +89,11 @@ armbian/
 │   ├── board.dtb                   ← 从 boot.img 中提取的原始厂商 DTB
 │   ├── board-vendor.dts            ← 上面 DTB 反编译出的可读 DTS（硬件地图）
 │   └── hardware-report.md          ← 完整硬件分析报告
-└── tools/                          ← 纯 Python 的 FDT 解析/编译工具链（Windows 也能跑）
+└── tools/                          ← FDT 解析/编译 + 板上调试脚本
     ├── fdt.py  pp.py  analyze_fw.py  build-dtb.sh
+    ├── rk-hciattach/hciattach_rk.c ← RK960 蓝牙固件下载工具（自包含，不依赖 bluez）
+    ├── rk960-bt-init.sh            ← 开机自动初始化蓝牙 + 加载 WiFi 驱动
+    ├── gpiosweep.py  specscan.py   ← GPIO 二分扫描 / 声学探头
 ```
 
 > `tools/` 里是本次为了在 **Windows 上直接分析/编译设备树** 现写的工具（FDT 解析器、
@@ -124,6 +135,11 @@ USE_DOCKER=yes ./build.sh
 - 收尾钩子 `pre_customize_image__install_evb2_dtb()` 把预编译 DTB 塞进 `/boot/dtb-*/rockchip/`
   并改 `armbianEnv.txt` 的 `fdtfile`
 - `SERIALCON="ttyS2"`，控制台 1500000 8N1
+- `PACKAGE_LIST_BOARD="bluez bluez-tools rfkill"` —— minimal 镜像默认不带 bluez，
+  缺了它 `hciconfig`/`bluetoothctl`/`bluetoothd` 全没有（`rk_hciattach` 本身不依赖 bluez，
+  但上层拿不到可用 HCI 设备）
+- CI 在 loop mount 后把 `rk960.ko`、`rk960_wifi*.bin`、`rk960_bt*.bin`、`rk_hciattach`
+  和 `rk960-bt.service` 注入镜像；同时 `chroot` 校验 bluez，缺失则补装并 enable 服务
 
 **为什么不给内核打补丁？** 打补丁要维护内核树 diff，内核一升级就冲突。现在 DTB 是独立文件，
 内核随便升，只是升级后要重跑 `build.sh`（或手动把 dtb 拷进新 dtb 目录）。
@@ -173,7 +189,9 @@ armbian-resize-filesystem
 | 6 | RTC | `hwclock -r` | 读到时间（HYM8563） |
 | 7 | 按键/LED | `evtest` / `ls /sys/class/leds` | 看到 `key-power`、`led-work` |
 | 8 | TF 卡 | 插卡后 `lsblk` | 出现 `mmcblk0`（若板上有卡槽） |
-| 9 | WiFi | `lspci`/`dmesg` | 需要 AIC8800 驱动+firmware，见第 7 节 |
+| 9 | WiFi | `ip link set wlan0 up` → `iw dev wlan0 set type managed; iw dev wlan0 scan` | `wlan0` 出现、扫描出若干 BSS（驱动 `rk960` 由 BT 服务在蓝牙就绪后加载，开机约 5~10 s） |
+| 10 | 蓝牙 | `hciconfig hci0` / `bluetoothctl --timeout 8 scan on` | `UP RUNNING`，扫描到 BLE 设备 |
+| 11 | 相机 | `media-ctl -d /dev/media0 -p`、`v4l2-ctl -d /dev/video0 --list-formats-ext` | 拓扑含 `hi846 → rockchip-mipi-csi → rkcif-mipi0`；**抓帧目前仍报 `-EINVAL`**（见第 7 节） |
 
 **第 1 项不过怎么办**（黑屏/无日志时按顺序排查）：
 
@@ -203,14 +221,14 @@ armbian-resize-filesystem
 | 项 | 状态 | 做法 |
 |---|---|---|
 | MIPI-DSI 面板 | ✅ 已完成 | `panel-simple-dsi` + DTS 描述（`dsi,flags=0x603`，含 MIPI_DSI_MODE_LPM 与 VIDEO_BURST），dclk 由 `PLL_VPLL` 700MHz/10 得到 70MHz |
-| WiFi（RK960 SDIO） | ❌ 无解（缺源码） | SDIO ID `0296:5349`(GCT)，非 AIC8800。厂商 vendor 分区只有预编译 `rk960.ko` + `rk960_wifi*.bin`，无公开源码；`drivers/aic8800` 保留但与本板芯片不匹配，`aicbsp_platform_power_on` 必然失败。可行替代：USB WiFi 网卡（USB2.0 口已实测可用）|
-| 蓝牙（RK960 UART） | ❌ 无解（缺 HCI 下载流程） | `&uart1` 已 okay（ttyS1，硬件流控）；RK960 需私有 HCI 固件下载，主线 `hci_uart` 不支持 |
+| WiFi（RK960 SDIO） | ✅ 已完成 | 板上 SDIO ID 实为 `0296:5349` = `RK960_DEVICE_ID_D`（不是 AIC8800）。从 `radxa/rkwifibt` 取 `drivers/rk960/`（37 文件，cw1200 血统），适配 6.18：`alloc_ordered_workqueue`、`EXTRA_CFLAGS`→`ccflags-y`；固件 `rk960_wifi_{loader,}.bin` + `rk960_wifi_rf.bin` 放 `/lib/firmware`。纯 SDIO ID 匹配，**DTS 无需改**。实测扫描 3~4 个 BSS、AP 模式正常、与 BT 共存 |
+| 蓝牙（RK960 UART） | ✅ 已完成 | 关键：ROM 复位释放后在 **115200** 播报 `RKUART`（不是 1.5 M），`rk_hciattach -n -s 115200 /dev/ttyS1 rockchip 3000000 flow nosleep` 下载 46 KB 固件后切 3 M。`tools/rk960-bt-init.sh` 做 B7(gpio79) 复位脉冲 + 排空播报 + 重试 + 成功后 `modprobe rk960`（**BT 必须先于 WiFi**），实测开机 4 s `hci0` UP RUNNING |
+| 摄像头（HI846） | ⚠️ 链路已通，抓帧待修 | 单前置 Hynix HI-846，MIPI CSI2 4-lane，`i2c@fe5b0000` @0x22。三级链路 `hi846 → csi_dphy → rkcsi(fdfb0000) → vicap(fdfe0000)`，rkcif/rkcsi 从 v6.19 回移（`1001-*` 补丁）。当前：`chip id 08 46 using 4 mipi lanes`、`/dev/media0` 拓扑完整、`/dev/video0` 存在，但 `VIDIOC_STREAMON` 返回 `-EINVAL`（`failed to start pipeline -22`），尚未出图。RK3568 上游无 ISP，只能出 RAW Bayer |
 | USB 主机 | ✅ 三个口全可用 | ① **USB2.0/OTG 口**（`fcc00000`）：主线默认 otg+extcon → 实测 `USB-HOST=0` 一直停在 peripheral，插任何 device 无反应。改 `&usb_host0_xhci { dr_mode = "host"; }` 后 Logitech 接收器正常枚举。② **USB3.0 口**（`fd000000`）：5V 使能脚是 `GPIO3_A1 + GPIO3_A2`（厂商 dtb 写的 GPIO0_A6 在本板悬空）。A2=regulator `vcc5v0_usb_host`（上游主开关，带 HOST2/HOST3），A1=`&gpio3` 的 `usb3-vbus-hog`（USB3.0 口自己的开关）。实测接收器在 fd000000/usb5 正常枚举。**已刷镜像免重刷升级**：把 `dts/rk3566-evb2-lp4x-v10.dtb` 直接 scp 到 `/boot/dtb/rockchip/rk3566-evb2-lp4x-v10.dtb` 重启即可（两处修复都内置在 dtb 里，不需要 overlay）|
 | USB3.0 口 / HOST2 / HOST3 供电 | ✅ 已修复 | 真实使能脚不是厂商 dtb 写的 GPIO0_A6（悬空），而是 GPIO3：A2=HOST 上游主开关（regulator `vcc5v0_usb_host`），A1=USB3.0 口自己的负载开关（`&gpio3` 的 `usb3-vbus-hog`）。USB3.0 口出 5V 需 A1+A2 同时高，HOST2/HOST3 只需 A2。定位方法：`tools/gpiosweep.py` 对全部 97 个闲置 GPIO 双极性二分扫描 + 万用表实测。实测 Logitech 接收器在 fd000000/usb5 正常枚举 |
 | 触摸 GSLX680 | ✅ 已完成 | 主线 `silead.c` + 内核补丁 `userpatches/kernel/archive/rockchip64-6.18/1000-input-silead-support-gslx680-download-protocol.patch`；固件用 `gslx680_fw.fw`（5247 条） |
 | 音频播放（喇叭） | ✅ 已完成 | 板载是 `I2S1 → 8 脚 I2S DAC（CS4333 类，需 MCLK 12.288 MHz）→ ANT8110 D 类功放 → 喇叭座`，功放使能 `GPIO1_A6`(`spk-ctl`，高有效)。三个叠加 bug 导致"PCM 正常但完全无声"：① I2S1 TX 主时钟实际跑 1 GHz（dtsi 只给 `CLK_I2S1_8CH_TX_SRC` 设 1.188 GHz，而 `clocks` 引用的是无 `CLK_SET_RATE_PARENT` 的门控，`clk_set_rate(12288000)` 被静默忽略，实测 10 s 音频 61 ms 播完）；② `I2S1_MCLKOUT_TX` 是 deviceless gate 无人 enable，PA2 无 MCLK 输出；③ `rockchip,digital-loopback` 与主模式冲突使 PCM 打开返回 `-EINVAL`。修法全在 DTS：`assigned-clocks` 显式走 FRAC 分频器给 12.288 MHz、在 `simple-audio-card,codec` 子节点声明 `clocks = <&cru I2S1_MCLKOUT_TX>`（simple-card 会在启动 PCM 时 `clk_prepare_enable`，停止时关闭）、删 loopback、SoC 做主。验证：PDM 麦克风闭环录到 1 kHz 比噪声底高 100 dB，谐波 −40 dB（THD≈1.5%），音准误差 <1% |
 | 麦克风（PDM 阵列） | ✅ 已完成 | `&pdm` 三麦 `sdi1/2/3` + `rockchip,path-map = <1 2 3 0>`，声卡 `rockchip,pdm-mic-array`（`hw:1,0`）。`tools/specscan.py` 可直接当作"声学探头"判断喇叭是否发声、频率是否正确 |
-| 摄像头（HI846） | 未启用 | 单前置 Hynix HI-846，MIPI CSI2 4-lane，挂在 `i2c@fe5b0000`（i2c-2）。链路：sensor → csi2-dphy → rkcif。`hi846.ko` 已在板上，但内核缺 `VIDEO_ROCKCHIP_RKCIF`/`MEDIA_CONTROLLER`/`V4L2_SUBDEV_API`，需重编内核；另 RK3568 上游无 ISP，只能出 RAW Bayer |
 | 以太网 100M 上限 | 硬件限制 | 板上是 RMII PHY，物理上就是百兆；要千兆得换 RGMII PHY 的板子 |
 | HDMI | 板上无 | 厂商 DTB 里 `hdmi` 也是 disabled |
 
