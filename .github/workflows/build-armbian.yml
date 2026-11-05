@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "发行版 (bookworm / noble / trixie)"
+        description: "发行版 (jammy=Ubuntu22.04 / bookworm / noble / trixie)"
         type: choice
-        options: [bookworm, noble, trixie]
+        options: [jammy, bookworm, noble, trixie]
         default: bookworm
       branch:
         description: "内核分支 (current / edge)"
