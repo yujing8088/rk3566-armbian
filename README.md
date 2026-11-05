@@ -126,6 +126,19 @@ cd armbian
 ./build.sh noble edge         # 指定发行版 / 内核分支
 ```
 
+桌面版（XFCE + 浏览器）走 `compile.sh` 直传，`build.sh` 只封了命令行版：
+
+```bash
+./compile.sh build BOARD=rk3566-evb2-lp4x-v10 BRANCH=current RELEASE=jammy \
+  BUILD_MINIMAL=no BUILD_DESKTOP=yes \
+  DESKTOP_ENVIRONMENT=xfce DESKTOP_TIER=mid EXPERT=yes
+```
+
+`DESKTOP_ENVIRONMENT` 可选 `xfce` / `mate` / `cinnamon` / `gnome` / `kde-plasma`；
+`DESKTOP_TIER` 为 `minimal`（仅桌面 ≈500MB）/ `mid`（+浏览器 ≈1GB）/ `full`（+LibreOffice ≈2.5GB）。
+桌面由 armbian-config（configng）的 YAML 定义驱动，jammy+arm64 的 XFCE 属官方支持组合；
+浏览器映射到 `apt.armbian.com` 的 **chromium 真 deb**（Ubuntu 自带的 chromium/firefox 是 snap 空壳，不可用）。
+
 脚本会自动 `git clone` Armbian 构建框架、同步 `userpatches/`、然后编译。
 产出：`armbian/build/output/images/Armbian-*-rk3566-evb2-lp4x-v10.img`
 
@@ -274,7 +287,9 @@ git push -u origin main
 ```
 
 然后网页：仓库 → **Actions** → `build-armbian` → **Run workflow**，
-可选 `release`（jammy / bookworm / noble / trixie）、`branch`（current / edge）、`minimal`。
+可选 `release`（jammy / bookworm / noble / trixie）、`branch`（current / edge）、`minimal`；
+要桌面版就勾 `desktop`，再选 `desktop_env`（xfce/mate/cinnamon/gnome/kde-plasma）
+和 `desktop_tier`（minimal/mid/full），此时 `minimal` 自动失效。
 `jammy` 即 Ubuntu 22.04 LTS（Armbian 里属社区支持等级，apt 仓库 `jammy/main` 齐全，实测可正常构建）。
 
 ### 8.3 跑完拿镜像

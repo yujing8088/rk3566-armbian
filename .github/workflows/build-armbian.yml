@@ -20,6 +20,20 @@ on:
         description: "最小化镜像（不含桌面）"
         type: boolean
         default: true
+      desktop:
+        description: "构建桌面版（勾选后忽略 minimal）"
+        type: boolean
+        default: false
+      desktop_env:
+        description: "桌面环境（仅 desktop=true 时生效）"
+        type: choice
+        options: [xfce, mate, cinnamon, gnome, kde-plasma]
+        default: xfce
+      desktop_tier:
+        description: "桌面档位 minimal=仅桌面 / mid=含浏览器 / full=含办公套件"
+        type: choice
+        options: [minimal, mid, full]
+        default: mid
   push:
     paths:
       - "dts/**"
@@ -55,7 +69,8 @@ jobs:
       - name: 释放磁盘空间
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /usr/local/share/boost /opt/az /usr/share/swift
+                      /usr/local/share/boost /opt/az /usr/share/swift \
+                      /opt/hostedtoolcache/CodeQL /usr/local/.ghcup /opt/pipx
           sudo apt-get clean
           df -h /
 
@@ -112,8 +127,27 @@ jobs:
         env:
           RELEASE: ${{ inputs.release || 'bookworm' }}
           BRANCH: ${{ inputs.branch || 'current' }}
+          DESKTOP: ${{ inputs.desktop || 'false' }}
+          MINIMAL_FLAG: ${{ inputs.minimal == false && 'no' || 'yes' }}
+          DE: ${{ inputs.desktop_env || 'xfce' }}
+          TIER: ${{ inputs.desktop_tier || 'mid' }}
         run: |
           set -o pipefail
+          # 桌面版开关：BUILD_DESKTOP=yes 必须配 BUILD_MINIMAL=no。
+          # 桌面环境由 armbian-config(configng) 的 YAML 定义驱动，可选
+          # xfce/mate/cinnamon/gnome/kde-plasma，档位 minimal/mid/full
+          # （minimal=DE+DM+基础工具，mid=+浏览器，full=+LibreOffice 等）。
+          DESKTOP_ARGS=()
+          if [ "${DESKTOP}" = "true" ]; then
+            BUILD_MINIMAL=no
+            BUILD_DESKTOP=yes
+            DESKTOP_ARGS=(DESKTOP_ENVIRONMENT="${DE}" DESKTOP_TIER="${TIER}")
+            echo "==> 桌面构建: env=${DE} tier=${TIER}"
+          else
+            BUILD_MINIMAL="${MINIMAL_FLAG}"
+            BUILD_DESKTOP=no
+            echo "==> 命令行构建: minimal=${BUILD_MINIMAL}"
+          fi
           # USE_LOCAL_APT_DEB_CACHE=no：关闭「宿主 apt 缓存拷贝进镜像」优化。
           # 托管 runner 上该缓存多次产出损坏的 lists 文件，导致镜像内
           # apt-get update 报 getline (12: Cannot allocate memory) 而构建失败。
@@ -127,8 +161,9 @@ jobs:
             BOARD=rk3566-evb2-lp4x-v10 \
             BRANCH="${BRANCH}" \
             RELEASE="${RELEASE}" \
-            BUILD_MINIMAL=yes \
-            BUILD_DESKTOP=no \
+            BUILD_MINIMAL="${BUILD_MINIMAL}" \
+            BUILD_DESKTOP="${BUILD_DESKTOP}" \
+            "${DESKTOP_ARGS[@]}" \
             KERNEL_CONFIGURE=no \
             EXPERT=yes \
             USE_LOCAL_APT_DEB_CACHE=no \
@@ -363,7 +398,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: armbian-rk3566-evb2-lp4x-v10-${{ inputs.branch || 'current' }}-${{ inputs.release || 'bookworm' }}
+          name: armbian-rk3566-evb2-lp4x-v10-${{ inputs.branch || 'current' }}-${{ inputs.release || 'bookworm' }}${{ inputs.desktop == true && format('-{0}-desktop', inputs.desktop_env) || '' }}
           path: |
             build/output/images/*.img
             build/output/images/*.img.*
