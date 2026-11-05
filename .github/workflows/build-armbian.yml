@@ -249,23 +249,28 @@ jobs:
           if [ -f out-bt/rk_hciattach ] && file out-bt/rk_hciattach | grep -q ARM; then
             sudo cp out-bt/rk_hciattach /mnt/r/usr/local/bin/
             sudo chmod 755 /mnt/r/usr/local/bin/rk_hciattach
-            # uart1 = ttyS1（serial1 别名），115200 初始波特率，3000000 加载后速率
+            # BT 初始化脚本：B7(GPIO2_B7=79) 复位脉冲 + hciattach @1.5M（ROM 播报波特率）+ 重试
+            # 注意：BT 固件下载要求芯片尚未跑 WiFi 固件，故 rk960 由脚本在 BT 成功后 modprobe
+            sudo cp tools/rk960-bt-init.sh /mnt/r/usr/local/bin/rk960-bt-init.sh
+            sudo chmod 755 /mnt/r/usr/local/bin/rk960-bt-init.sh
             printf '%s\n' \
               '[Unit]' \
-              'Description=RK960 Bluetooth firmware loader (rk_hciattach)' \
+              'Description=RK960 Bluetooth init (hciattach) + WiFi driver load' \
               'After=multi-user.target' \
               '[Service]' \
-              'Type=forking' \
-              'ExecStart=/usr/local/bin/rk_hciattach -n -s 115200 /dev/ttyS1 rockchip 3000000 flow nosleep 11:22:33:44:55:66' \
+              'Type=simple' \
+              'ExecStart=/usr/local/bin/rk960-bt-init.sh' \
               'Restart=on-failure' \
-              'RestartSec=3' \
+              'RestartSec=5' \
               '[Install]' \
               'WantedBy=multi-user.target' \
               | sudo tee /mnt/r/etc/systemd/system/rk960-bt.service > /dev/null
             sudo mkdir -p /mnt/r/etc/systemd/system/multi-user.target.wants
             sudo ln -sf /etc/systemd/system/rk960-bt.service \
               /mnt/r/etc/systemd/system/multi-user.target.wants/rk960-bt.service
-            echo "✅ rk_hciattach + rk960-bt.service 已注入"
+            # WiFi 驱动不再用 modules-load 自启动（顺序：BT 先、WiFi 后），去掉 rk960 自加载
+            sudo rm -f /mnt/r/etc/modules-load.d/rk960.conf
+            echo "✅ rk_hciattach + rk960-bt.service(BT优先初始化) 已注入"
           else
             echo "!! rk_hciattach 未产出，镜像不含 BT 用户态工具"
           fi

@@ -22,6 +22,7 @@
 #include <stdbool.h>
 #include <poll.h>
 #include <sys/poll.h>
+#include <sys/select.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -147,6 +148,33 @@ static int UartReadn(int fd, uint8_t *data, uint32_t size)
 
     BT_DBG("%s return :%d, nread = %d\n", __func__, (size - nleft), nread);
     return (size - nleft);
+ }
+
+/* tolerant response reader: block for the 4-byte tag, then opportunistically
+ * read the rest within 300ms windows — some ROM ACKs are shorter than the
+ * full _download_response struct, and long pauses (~51ms) must not abort */
+static int UartReadResp(int fd, uint8_t *data, uint32_t size)
+{
+    uint32_t got = 0;
+    int n;
+    while (got < 4) {
+        n = read(fd, data + got, 4 - got);
+        if (n <= 0) return -1;
+        got += n;
+    }
+    while (got < size) {
+        fd_set rfds;
+        struct timeval tv = {0, 300000};
+        FD_ZERO(&rfds);
+        FD_SET(fd, &rfds);
+        if (select(fd + 1, &rfds, NULL, NULL, &tv) <= 0) break;
+        n = read(fd, data + got, size - got);
+        if (n <= 0) break;
+        got += n;
+    }
+    while (got < size) data[got++] = 0;
+    BT_ERROR("%s: got %u of %u bytes\n", __func__, got, size);
+    return got;
  }
 
 static void uart_set_hw_fctrl(int fd, uint8_t hw_fctrl)
@@ -364,7 +392,7 @@ static int rk_bt_boot(int fd, char* bin)
 
     do{
         /*read response*/
-        len = UartReadn(fd, (uint8_t *)&resp, sizeof(struct _download_response));
+        len = UartReadResp(fd, (uint8_t *)&resp, sizeof(struct _download_response));
         for (i=0; i<len; i++)
         {
             BT_DBG("RESP_TAG=[%c],hex= [0x%02x], total: %d, cnt:%d\n", ((uint8_t*)&resp)[i], ((uint8_t*)&resp)[i], len, count);
@@ -390,7 +418,7 @@ static int rk_bt_boot(int fd, char* bin)
         i = UartWrite(fd, pBuf, len);
         BT_DBG("fw uart towrite:%u, done:%u\n", len, i);
         /*read response*/
-        i = UartReadn(fd, (uint8_t *)&resp, sizeof(struct _download_response));
+        i = UartReadResp(fd, (uint8_t *)&resp, sizeof(struct _download_response));
         BT_DBG("fw read RESP:%u, done:%u\n", (unsigned int)sizeof(struct _download_response), i);
         if (resp.tag != *((uint32_t *)RESP_TAG)||(resp.status !=0))
         {
