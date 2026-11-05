@@ -276,6 +276,29 @@ jobs:
           else
             echo "!! rk_hciattach 未产出，镜像不含 BT 用户态工具"
           fi
+          # ---- bluez 兜底：PACKAGE_LIST_BOARD 未生效时 chroot 补装 ----
+          # 首版镜像实测：minimal 不带 bluez，hciconfig/bluetoothctl 全缺，
+          # rk960-bt.service 的完成判定因此失效。
+          if sudo chroot /mnt/r /bin/sh -c 'command -v hciconfig' >/dev/null 2>&1; then
+            echo "✅ bluez 已在镜像中"
+          else
+            echo "!! 镜像缺 bluez，chroot 补装"
+            sudo mount --bind /dev  /mnt/r/dev
+            sudo mount --bind /proc /mnt/r/proc
+            sudo mount --bind /sys  /mnt/r/sys
+            sudo cp /etc/resolv.conf /mnt/r/etc/resolv.conf || true
+            sudo chroot /mnt/r /bin/bash -c \
+              'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y --no-install-recommends bluez bluez-tools rfkill' \
+              || echo "!! bluez 安装失败（镜像将缺少蓝牙用户态工具）"
+            sudo umount /mnt/r/sys /mnt/r/proc /mnt/r/dev || true
+          fi
+          # chroot 里 apt 通常不会 enable 服务，显式挂上蓝牙开机自启
+          if [ -f /mnt/r/lib/systemd/system/bluetooth.service ]; then
+            sudo mkdir -p /mnt/r/etc/systemd/system/multi-user.target.wants
+            sudo ln -sf /lib/systemd/system/bluetooth.service \
+              /mnt/r/etc/systemd/system/multi-user.target.wants/bluetooth.service
+            echo "✅ bluetooth.service 已设为开机自启"
+          fi
           sudo sync
           sudo umount /mnt/r
           sudo losetup -d "$LOOP"

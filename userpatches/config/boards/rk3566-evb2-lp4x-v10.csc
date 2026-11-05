@@ -17,6 +17,13 @@ IMAGE_PARTITION_TABLE="gpt"
 SERIALCON="ttyS2"
 
 # ---------------------------------------------------------------------------
+# 蓝牙用户态：minimal 镜像默认不含 bluez，导致 hciconfig/bluetoothctl/bluetoothd
+# 全都没有 —— rk960-bt.service 虽然能把固件下进去，但上层拿不到可用 HCI 设备。
+# （2026-11-05 首版镜像实测踩到；hciattach 本身是独立的 rk_hciattach，不依赖 bluez）
+# ---------------------------------------------------------------------------
+PACKAGE_LIST_BOARD="bluez bluez-tools rfkill"
+
+# ---------------------------------------------------------------------------
 # 自研 DTB 安装：镜像构建收尾时把预编译好的 dtb 放进 /boot/dtb-*/rockchip/
 # （避免给内核打补丁，后续升级内核也不会把 dtb 弄丢 —— 如果内核升级后 dtb 目录
 #   变了，重跑 build.sh 即可，或把 dts/ 里的 dts 提交给上游内核）

@@ -21,6 +21,18 @@ LOG=/run/rk960-bt.log
 
 log() { echo "[bt-init] $*"; }
 
+# 下载是否完成：hciattach 在固件下载 + HCI Reset 之后才向内核注册 HCI 设备，
+# 所以 /sys/class/bluetooth/hci0 出现 == 固件已跑起来。
+# 注意不能只依赖 hciconfig：minimal 镜像若没装 bluez 就没有该命令，
+# 会让判定恒假、白等 3x90s 才 modprobe WiFi（旧镜像踩过这个坑）。
+bt_ready() {
+	[ -d /sys/class/bluetooth/hci0 ] || return 1
+	if command -v hciconfig >/dev/null 2>&1; then
+		hciconfig hci0 2>/dev/null | grep -q "UP RUNNING" || return 1
+	fi
+	return 0
+}
+
 # gpio79 导出 + 默认拉低（把 BT 核按在复位里）
 if [ ! -d /sys/class/gpio/gpio$RST ]; then
 	echo $RST > /sys/class/gpio/export 2>/dev/null
@@ -54,7 +66,7 @@ while [ $attempt -le 3 ]; do
 	ok=0
 	while [ $i -lt 90 ]; do
 		sleep 1
-		if hciconfig hci0 2>/dev/null | grep -q "UP RUNNING"; then
+		if bt_ready; then
 			ok=1
 			break
 		fi
@@ -67,6 +79,8 @@ while [ $attempt -le 3 ]; do
 
 	if [ $ok -eq 1 ]; then
 		log "hci0 UP RUNNING (attempt $attempt)"
+		# 有 bluez 时显式拉起来（minimal 镜像里 bluetoothd 可能还没扫到设备）
+		command -v hciconfig >/dev/null 2>&1 && hciconfig hci0 up 2>/dev/null
 		# BT 已就绪，最后再拉 WiFi 驱动，保证 WiFi+BT 共存
 		modprobe rk960 2>/dev/null
 		log "rk960 WiFi driver loaded; serving"
