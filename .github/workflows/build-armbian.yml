@@ -119,6 +119,10 @@ jobs:
             cp -rv userpatches/kernel/. build/userpatches/kernel/
           fi
           [ -d userpatches/firmware ] && cp -rv userpatches/firmware build/userpatches/ || true
+          # 镜像定制钩子：桌面安装完成后固化屏幕方向(left) + 触摸标定/跟随
+          # （框架 lib/functions/rootfs/customize.sh 会调用 build/userpatches/customize-image.sh）
+          cp -v userpatches/customize-image.sh build/userpatches/
+          chmod +x build/userpatches/customize-image.sh
           ls -lR build/userpatches/kernel 2>/dev/null || true
           ls -l build/userpatches/dtb/ build/userpatches/config/boards/
           # 桌面镜像专属：configng 的 common.yaml 桌面列表按 noble+ 编写，
