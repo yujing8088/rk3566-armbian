@@ -11,6 +11,48 @@
 
 ---
 
+## 2026-11-06 — XFCE 桌面版实机调通：触摸标定 + 横屏跟随旋转
+
+### 镜像
+
+`Armbian-unofficial_26.11.0-trunk_Rk3566-evb2-lp4x-v10_jammy_current_6.18.60_xfce_desktop.img`
+（CI run `42075514129`，XFCE/mid 档，sha256 `d1e1ecef34a9d000fde221fff3f97e5c0993f428c2643f091a97ca5664ee2c25`）。
+首次桌面构建（run `42053843414`）失败的原因与修复见上一节 `patch-jammy-desktop.sh`。
+
+### 实机验证结论（板 192.168.10.252，XFCE + lightdm + autologin admin）
+
+**首启必先落字符界面是设计行为**：首启向导（root/armbian 登录 → 改密 →
+建用户）完成后 `armbian-firstlogin` 自动拉起 lightdm 进桌面。
+
+### 触摸标定（silead_ts / GSL1680）
+
+1. **装向与标定**：触摸传感器与面板装向差 90°，且实际有效区域
+   X 10–1017 / Y 9–632 ≠ 内核标称 0–1279 / 0–799。用「四角触摸取极值」法
+   （与点击顺序无关）实测范围，得出含轴交换+缩放+偏移的 udev 基础标定：
+   `ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1.282504 -0.014446 1.270109 0 -0.009930"`
+   （`/etc/udev/rules.d/99-touch-cal.rules`，限定 `ATTRS{name}=="silead_ts"`）。
+2. **跟随旋转**：X11 下 libinput 不自动跟随显示旋转。守护
+   `/usr/local/bin/touch-follow-rotate`（systemd `touch-follow.service`，
+   WantedBy=graphical.target）每 2 秒解析 `xrandr` 旋转态并用
+   `xinput set-prop "Coordinate Transformation Matrix"` 覆盖。
+   **坑**：因 udev 基础标定已含 90° 轴交换，守护表里的 left/right 必须
+   与教科书表**对调**（否则叠加出 180° 颠倒），实测定案：
+   - `left` → `0 -1 1 1 0 0 0 0 1`
+   - `right` → `0 1 0 -1 0 1 0 0 1`
+   - `inverted` → `-1 0 1 0 -1 1 0 0 1`
+   - `normal` → identity（纯靠 udev 基础标定）
+3. **踩坑**：SSH 里 `pkill -f <pattern>` 会匹配到自己的 bash -c 命令行并自杀，
+   后续命令静默不执行（表现为守护「启动成功」实际没跑）——用 `[t]ouch-follow`
+   正则技巧或直接交给 systemd；`su admin -c` 在 SSH 非交互通道不稳定，
+   守护以 root 跑、读 `/home/admin/.Xauthority`。
+
+### 自动登录
+
+`/etc/lightdm/lightdm.conf.d/22-armbian-autologin.conf`：
+`autologin-user=admin` + `user-session=xfce`。
+
+---
+
 ## 2026-11-05（晚）— 产出 Ubuntu 22.04 LTS 镜像
 
 ### 做法：板级支持零改动，只放开发行版选项
